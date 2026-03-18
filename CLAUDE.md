@@ -2,41 +2,49 @@
 
 ## Project Overview
 
-This project implements a **forecast-then-control** system for the CityLearn Challenge 2023, enhanced with:
-- **Decision-focused learning** (SPO+ surrogate) so forecasts serve downstream control
-- **LLM preference router** (Qwen2.5-7B-Instruct) for high-level constraint/weight selection
-- **QP-based MPC** (cvxpy) with receding horizon (24-step plan, execute first action)
+This repository is currently centered on the first usable closed loop for CityLearn 2023:
 
-Target venue: CCF-A conference (NeurIPS / ICML / AAAI).
+- GRU forecaster trained from historical observations
+- fixed-weight QP controller for battery-only control
+- end-to-end evaluation against the `RBC` baseline
 
-## Architecture
+Later stages such as `SPO+`, uncertainty-aware control, and the LLM router remain part of the research roadmap, but they are not yet implemented as production-ready features in this codebase.
 
+## Current Architecture
+
+Current executable path:
+
+```text
+Raw observations -> GRU forecaster -> QP controller -> CityLearn env
 ```
-LLM Router (Qwen2.5-7B) ──► weights / constraints
-                                    │
-Raw observations ──► GRU Forecaster ──► QP Controller ──► CityLearn env
-                         ▲                    │
-                         └── SPO+ loss ◄──────┘
+
+Planned later-stage path:
+
+```text
+Raw observations -> GRU forecaster -> QP controller -> CityLearn env
+                         ^                  ^
+                         |                  |
+                   SPO+ training      LLM preference routing
 ```
 
-Five modules, each independently owned by a sub-agent:
+## Module Ownership
 
 | Module | Path | Responsibility |
 |--------|------|---------------|
 | Data | `data/` | CityLearn data extraction, dataset/dataloader |
-| Forecast | `models/` | Time-series forecasters (GRU → TSMixer/PatchTST) |
-| Controller | `controllers/` | QP/MPC via cvxpy, safe fallback |
-| Eval | `eval/` | Baselines (RBC, RL), metrics, KPI reporting |
-| LLM Router | `llm_router/` | Prompt templates, JSON schema, router logic |
+| Forecast | `models/` | Time-series forecasters and forecast training |
+| Controller | `controllers/` | QP control and safe fallback |
+| Eval | `eval/` | RBC baseline, end-to-end evaluation, metrics, KPI reporting |
+| LLM Router | `llm_router/` | Prompt templates, JSON schema, router implementation skeleton |
 
 ## Tech Stack
 
 - **Python 3.10+**
 - **CityLearn 2.1+** with `central_agent=True`
 - **PyTorch** for forecaster training
-- **cvxpy** for QP solving (OSQP backend)
-- **vLLM or transformers** for local LLM inference
-- **Hydra / OmegaConf** style configs in `configs/*.yaml`
+- **cvxpy** with **OSQP** for QP solving
+- **YAML** configs in `configs/*.yaml`
+- **vLLM / transformers** only when the LLM router stage is actually enabled
 
 ## Coding Conventions
 
@@ -53,11 +61,6 @@ Five modules, each independently owned by a sub-agent:
 ### Key Interfaces
 
 ```python
-# Forecaster interface (models/base_forecaster.py)
-class BaseForecaster:
-    def predict(self, history: Tensor, horizon: int) -> Tensor: ...
-    def train_step(self, batch, loss_fn) -> dict: ...
-
 # Controller interface (controllers/qp_controller.py)
 class QPController:
     def act(self, state: dict, forecast: np.ndarray,
@@ -66,34 +69,44 @@ class QPController:
 # LLM Router interface (llm_router/router.py)
 class LLMRouter:
     def route(self, context: dict) -> dict:
-        """Returns {"weights": {...}, "constraints": {...}}"""
+        """Returns {"weights": {...}, "constraints": {...}, "mode": "..."}"""
 ```
 
+Notes:
+
+- `QPController` is implemented and used by `eval/run_controller.py`.
+- `LLMRouter.route()` is not implemented yet and must not be documented elsewhere as an available runtime feature.
+- A deterministic fallback is required before the LLM router can be considered usable.
+
 ### Config
-- All hyperparameters live in `configs/*.yaml`, not in source code.
+
+- Keep hyperparameters in `configs/*.yaml`, not hard-coded in source files.
 - Use `yaml.safe_load()` for config loading.
+- Configs should use real built-in dataset identifiers or valid local paths; do not keep stale placeholder paths.
 
 ### Testing
-- Smoke tests in `tests/test_smoke.py` — must pass before any PR.
-- Each module should have its own test file as it matures.
+
+- `tests/test_smoke.py` is the minimum baseline check.
+- `tests/test_qp.py` is the controller-path check and depends on `cvxpy`.
+- Each module should gain its own focused tests as the implementation matures.
 
 ### Git
 - Commit messages: `<module>: <imperative verb> <description>`
   - Example: `forecast: add GRU training loop with teacher forcing`
 - One logical change per commit.
 
-## Sprint Plan (see INSTRUCTION.md for details)
+## Current Phase
 
-1. **Sprint 0**: Project scaffolding (this step)
-2. **Sprint 1**: Data pipeline + GRU forecaster + standard MSE training
-3. **Sprint 2**: QP controller + RBC baseline + end-to-end eval
-4. **Sprint 3**: SPO+ decision-focused loss integration
-5. **Sprint 4**: LLM router (prompt-only) + synthetic instruction data
-6. **Sprint 5**: Ablation, paper writing
+1. **Sprint 0**: Project scaffolding — done
+2. **Sprint 1**: Data pipeline + GRU forecaster — largely done
+3. **Sprint 2**: QP controller + RBC baseline + end-to-end eval — code mostly done, acceptance not passed
+4. **Sprint 3**: SPO+ decision-focused loss integration — not started
+5. **Sprint 4**: LLM router — prompt/schema skeleton only
+6. **Sprint 5**: Ablation and paper writing — not started
 
 ## Important Notes
 
-- CityLearn uses `central_agent=True` mode — all buildings share one agent.
-- QP solver numerical stability matters for SPO+ perturbation — use OSQP with warm-starting.
-- The LLM is prompt-only in v1; LoRA fine-tuning is a stretch goal.
-- Reports go to `reports/`, trained model checkpoints to `artifacts/`.
+- CityLearn uses `central_agent=True`; the current setup assumes a shared central controller.
+- The immediate target is to beat or tie `RBC` with fixed weights before adding more research modules.
+- QP solver numerical stability matters; prefer OSQP with warm-starting.
+- Reports go to `reports/`, trained model checkpoints and prepared data go to `artifacts/`.

@@ -3,6 +3,7 @@
 Usage:
     python eval/run_controller.py --schema citylearn_challenge_2023_phase_1
     python eval/run_controller.py --checkpoint artifacts/checkpoints/gru_spo_best.pt --tag spo
+    python eval/run_controller.py --forecast_mode oracle --oracle_data artifacts/forecast_data.npz
 """
 
 import argparse
@@ -38,6 +39,8 @@ OBS_BUILDING_0 = {
     "electrical_storage_soc": 19,
     "net_electricity_consumption": 20,
 }
+
+TARGET_COLS = [4, 5, 6]
 
 
 def obs_to_features(obs: list | np.ndarray, obs_names: list[str]) -> np.ndarray:
@@ -77,6 +80,44 @@ def obs_to_features(obs: list | np.ndarray, obs_names: list[str]) -> np.ndarray:
     ], dtype=np.float32)
 
 
+def load_oracle_targets(path: str, target_cols: list[int] | None = None) -> np.ndarray:
+    """Load oracle future targets from prepared forecast data."""
+    cols = TARGET_COLS if target_cols is None else target_cols
+    loaded = np.load(path, allow_pickle=True)
+    return loaded["data"][:, cols].astype(np.float32)
+
+
+def build_oracle_forecast(
+    oracle_targets: np.ndarray,
+    current_step: int,
+    horizon: int,
+) -> np.ndarray:
+    """Slice future targets from the prepared oracle time series.
+
+    Forecasting at step ``t`` should use future rows starting at ``t + 1``.
+    If the remaining sequence is shorter than ``horizon``, pad with the last
+    available row so the controller always receives a fixed-shape forecast.
+    """
+    start = current_step + 1
+    end = start + horizon
+    future = oracle_targets[start:end]
+
+    if len(future) == 0:
+        future = oracle_targets[-1:]
+
+    if len(future) < horizon:
+        pad = np.repeat(future[-1:], horizon - len(future), axis=0)
+        future = np.concatenate([future, pad], axis=0)
+
+    return future.astype(np.float32)
+
+
+def build_myopic_forecast(current_features: np.ndarray, horizon: int) -> np.ndarray:
+    """Repeat the current observed target values across the planning horizon."""
+    current_targets = current_features[TARGET_COLS].astype(np.float32)
+    return np.repeat(current_targets[None, :], horizon, axis=0)
+
+
 def run_forecast_control(
     schema: str,
     checkpoint: str,
@@ -87,6 +128,8 @@ def run_forecast_control(
     output_dir: str,
     tag: str = "forecast_qp",
     device: str = "cpu",
+    forecast_mode: str = "learned",
+    oracle_data_path: str = "artifacts/forecast_data.npz",
 ) -> dict:
     """Run the forecast-then-control pipeline on CityLearn.
 
@@ -100,32 +143,45 @@ def run_forecast_control(
         output_dir: Where to save results.
         tag: Filename tag for results.
         device: torch device.
+        forecast_mode: One of ``learned``, ``oracle``, or ``myopic``.
+        oracle_data_path: Prepared data path used by oracle mode.
 
     Returns:
         Dict of KPI values.
     """
     from citylearn.citylearn import CityLearnEnv
 
-    # Load model
     model_cfg = forecast_config["model"]
-    norm_stats = np.load(norm_stats_path)
-    mean, std = norm_stats["mean"], norm_stats["std"]
+    horizon = model_cfg["horizon"]
+    mean = None
+    std = None
+    model = None
 
-    model = GRUForecaster(
-        input_dim=len(mean),
-        hidden_dim=model_cfg["hidden_dim"],
-        num_layers=model_cfg["num_layers"],
-        output_dim=model_cfg["output_dim"],
-        horizon=model_cfg["horizon"],
-        dropout=0.0,
-    ).to(device)
-    model.load_state_dict(torch.load(checkpoint, map_location=device, weights_only=True))
-    model.eval()
+    if forecast_mode == "learned":
+        norm_stats = np.load(norm_stats_path)
+        mean, std = norm_stats["mean"], norm_stats["std"]
+
+        model = GRUForecaster(
+            input_dim=len(mean),
+            hidden_dim=model_cfg["hidden_dim"],
+            num_layers=model_cfg["num_layers"],
+            output_dim=model_cfg["output_dim"],
+            horizon=horizon,
+            dropout=0.0,
+        ).to(device)
+        model.load_state_dict(torch.load(checkpoint, map_location=device, weights_only=True))
+        model.eval()
+    elif forecast_mode == "oracle":
+        oracle_targets = load_oracle_targets(oracle_data_path)
+    elif forecast_mode == "myopic":
+        oracle_targets = None
+    else:
+        raise ValueError(f"Unsupported forecast_mode: {forecast_mode}")
 
     # Controller
     batt_cfg = controller_config.get("battery", {})
     ctrl = QPController(
-        horizon=controller_config.get("horizon", 24),
+        horizon=controller_config.get("horizon", horizon),
         battery_capacity=batt_cfg.get("capacity", 4.0),
         soc_min=batt_cfg.get("soc_min", 0.0),
         soc_max=batt_cfg.get("soc_max", 1.0),
@@ -139,9 +195,6 @@ def run_forecast_control(
     num_actions = len(env.action_names[0])
     num_buildings = len(env.buildings)
     history_len = model_cfg.get("history_len", 24)
-
-    # Target columns in forecast_data: electricity_pricing(4), non_shiftable_load_avg(5), solar_generation_avg(6)
-    target_cols = [4, 5, 6]
 
     obs = env.reset()
     features = obs_to_features(obs[0][0] if isinstance(obs[0][0], list) else obs[0], obs_names)
@@ -157,28 +210,28 @@ def run_forecast_control(
 
     while not (terminated or truncated):
         if len(history_buf) >= history_len:
-            # Normalize
             history_arr = np.array(history_buf)
-            history_norm = (history_arr - mean) / std
-            history_tensor = torch.tensor(history_norm, dtype=torch.float32).unsqueeze(0).to(device)
+            current_features = history_arr[-1]
 
-            # Predict
-            with torch.no_grad():
-                pred_norm = model(history_tensor).cpu().numpy()[0]  # (horizon, 3)
+            if forecast_mode == "learned":
+                history_norm = (history_arr - mean) / std
+                history_tensor = torch.tensor(
+                    history_norm, dtype=torch.float32
+                ).unsqueeze(0).to(device)
 
-            # Denormalize predictions (target cols)
-            pred = pred_norm * std[target_cols] + mean[target_cols]
+                with torch.no_grad():
+                    pred_norm = model(history_tensor).cpu().numpy()[0]
 
-            # QP forecast: [price, load, solar]
-            qp_forecast = pred  # already in order [pricing, load, solar]
+                qp_forecast = pred_norm * std[TARGET_COLS] + mean[TARGET_COLS]
+            elif forecast_mode == "oracle":
+                qp_forecast = build_oracle_forecast(oracle_targets, step, ctrl.horizon)
+            else:
+                qp_forecast = build_myopic_forecast(current_features, ctrl.horizon)
 
             # Get current SOC (average across buildings)
             soc_vals = [b.electrical_storage.soc[-1] / b.electrical_storage.capacity
                         for b in env.buildings]
             avg_soc = float(np.mean(soc_vals))
-
-            # Carbon intensity from current observation
-            carbon_idx = obs_names.index("carbon_intensity") if "carbon_intensity" in obs_names else None
 
             # Get action from controller
             action = ctrl.act(
@@ -254,6 +307,13 @@ def main():
     parser.add_argument("--output_dir", type=str, default="reports/")
     parser.add_argument("--tag", type=str, default="forecast_qp")
     parser.add_argument("--device", type=str, default="cpu")
+    parser.add_argument(
+        "--forecast_mode",
+        type=str,
+        default="learned",
+        choices=["learned", "oracle", "myopic"],
+    )
+    parser.add_argument("--oracle_data", type=str, default="artifacts/forecast_data.npz")
     args = parser.parse_args()
 
     with open(args.forecast_config) as f:
@@ -275,6 +335,8 @@ def main():
         output_dir=args.output_dir,
         tag=args.tag,
         device=args.device,
+        forecast_mode=args.forecast_mode,
+        oracle_data_path=args.oracle_data,
     )
 
     print(f"\n{args.tag} KPIs:")

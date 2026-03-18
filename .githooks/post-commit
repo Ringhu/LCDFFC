@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+if [ -z "${branch}" ] || [ "${branch}" = "HEAD" ]; then
+  exit 0
+fi
+
+if ! git config --get remote.origin.url >/dev/null 2>&1; then
+  exit 0
+fi
+
+repo_root="$(git rev-parse --show-toplevel)"
+log_file="${repo_root}/.git/auto-push.log"
+proxy_wrapper="/cluster/home/user1/.codex/skills/github-proxy-ops/scripts/git-with-proxy.sh"
+
+{
+  echo "[$(date -Iseconds)] auto-push start: ${branch}"
+  "${proxy_wrapper}" git push origin "${branch}"
+  echo "[$(date -Iseconds)] auto-push done: ${branch}"
+} >>"${log_file}" 2>&1 || {
+  echo "post-commit auto-push failed, see ${log_file}" >&2
+  exit 0
+}

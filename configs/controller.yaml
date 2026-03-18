@@ -1,0 +1,26 @@
+# QP-MPC controller configuration
+horizon: 24
+
+battery:
+  capacity: 6.4  # kWh
+  soc_min: 0.0
+  soc_max: 1.0
+  p_max: 1.0  # max charge/discharge rate
+  efficiency: 0.95
+
+default_weights:
+  cost: 0.4
+  carbon: 0.2
+  peak: 0.3
+  smooth: 0.1
+
+solver:
+  name: "OSQP"
+  warm_start: true
+  max_iter: 4000
+  eps_abs: 0.001
+  eps_rel: 0.001
+
+fallback:
+  strategy: "zero"  # "zero" (do nothing) or "conservative"
+  trigger_on_infeasible: true

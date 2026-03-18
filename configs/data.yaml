@@ -1,0 +1,24 @@
+# Data module configuration
+schema_path: "data/citylearn_challenge_2023_phase_1/schema.json"
+output_dir: "artifacts/"
+
+features:
+  - "non_shiftable_load"
+  - "solar_generation"
+  - "electricity_pricing"
+  - "carbon_intensity"
+  - "outdoor_dry_bulb_temperature"
+  - "hour"
+  - "day_type"
+
+target_cols:
+  - "non_shiftable_load"
+  - "solar_generation"
+  - "electricity_pricing"
+
+history_len: 24
+horizon: 24
+
+train_ratio: 0.7
+val_ratio: 0.15
+test_ratio: 0.15

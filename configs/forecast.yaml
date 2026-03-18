@@ -1,0 +1,23 @@
+# Forecast model configuration
+model:
+  type: "gru"
+  input_dim: 7
+  hidden_dim: 64
+  num_layers: 2
+  output_dim: 3
+  horizon: 24
+  dropout: 0.1
+
+training:
+  epochs: 100
+  batch_size: 64
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  early_stopping_patience: 10
+  loss: "mse"  # "mse" or "spo_plus"
+
+spo_plus:
+  enabled: false
+  perturbation_eps: 0.1
+
+checkpoint_dir: "artifacts/checkpoints/"

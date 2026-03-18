@@ -1,0 +1,16 @@
+# Evaluation configuration
+schema_path: "data/citylearn_challenge_2023_phase_1/schema.json"
+
+baselines:
+  - "rbc"
+
+methods:
+  - "forecast_qp"
+
+metrics:
+  - "cost"
+  - "carbon"
+  - "peak"
+  - "ramping"
+
+output_dir: "reports/"

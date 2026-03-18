@@ -1,0 +1,160 @@
+# LCDFFC 实验指南
+
+## 总体目标
+
+在 CityLearn Challenge 2023 上实现最小可行的 forecast-then-control 系统，逐步加入 decision-focused learning 和 LLM 偏好路由，最终产出 CCF-A 级论文。
+
+---
+
+## Sprint 计划
+
+### Sprint 0：项目脚手架（当前）
+
+**目标**：建立完整的项目结构和文档。
+
+- [x] 创建目录结构
+- [x] 编写 CLAUDE.md / README.md / INSTRUCTION.md
+- [x] 创建各模块骨架（`__init__.py` + 接口定义）
+- [x] 编写 Agent Prompt 文件
+- [x] 配置文件模板
+
+**验收标准**：`python tests/test_smoke.py` 通过。
+
+---
+
+### Sprint 1：数据 + 预测模型
+
+**目标**：跑通 CityLearn 数据提取 → GRU 训练 → 预测输出。
+
+**Agent A（数据）任务**：
+1. 实现 `data/prepare_citylearn.py`：从 CityLearn schema 提取历史数据
+2. 实现 `data/dataset.py`：滑动窗口 Dataset，输出 `(history, future_target)` 对
+3. 输出 `artifacts/data_summary.json`，包含特征维度、时间范围等
+
+**Agent B（预测）任务**：
+1. 实现 `models/gru_forecaster.py`：标准 GRU，支持多步预测
+2. 训练脚本：MSE loss，early stopping
+3. 输出训练曲线到 `reports/`
+
+**止损点**：
+- 如果 CityLearn 数据提取卡住超过 2 小时 → 改用 CSV 导出 + 手动加载
+- 如果 GRU 训练 loss 不下降 → 检查数据标准化和学习率
+
+---
+
+### Sprint 2：控制器 + 基线评估
+
+**目标**：QP 控制器 + RBC 基线，端到端跑通 CityLearn 评估。
+
+**Agent C（控制器）任务**：
+1. 实现 `controllers/qp_controller.py`：
+   - 目标函数：`w_cost * cost + w_carbon * carbon + w_peak * peak_proxy + w_smooth * smoothness`
+   - 约束：SOC bounds、charge/discharge rate bounds
+   - 接口：`act(state, forecast, weights, constraints) -> action`
+2. 实现 `controllers/safe_fallback.py`：保守回退策略（不充不放或基于规则）
+3. Receding horizon：24 步规划，执行第一步
+
+**Agent D（评估）任务**：
+1. 实现 `eval/run_rbc.py`：CityLearn 自带 RBC 作为基线
+2. 实现 `eval/run_controller.py`：加载预测模型 + QP 控制器，跑完整 episode
+3. 实现 `eval/metrics.py`：计算 cost, carbon, peak, ramping 等 KPI
+4. 对比表输出到 `reports/`
+
+**止损点**：
+- 如果 cvxpy 求解不稳定 → 放松约束或增加正则项
+- 如果 QP 控制器不如 RBC → 检查预测质量和权重设置
+
+---
+
+### Sprint 3：Decision-Focused Learning
+
+**目标**：引入 SPO+ loss，让预测模型直接优化决策质量。
+
+**关键实现**：
+1. 在 `models/` 中添加 SPO+ loss 计算
+2. 需要对 QP 层做 cost perturbation（`c + 2*c_hat - c_true`）
+3. 重新训练 GRU，对比 MSE-only vs SPO+ 的下游控制性能
+
+**止损点**：
+- SPO+ 梯度数值不稳定 → 增大 perturbation epsilon 或 clip 梯度
+- 训练后性能无提升 → 检查 QP 的最优解是否对 cost 向量足够敏感
+
+---
+
+### Sprint 4：LLM 偏好路由器
+
+**目标**：用 LLM 根据场景上下文生成控制器权重和约束。
+
+**Agent E（LLM 路由）任务**：
+1. 实现 `llm_router/prompt_templates.py`：场景描述 + 输出格式要求
+2. 实现 `llm_router/json_schema.py`：输出 schema 定义和校验
+3. 实现 `llm_router/router.py`：调用 LLM，解析 JSON 输出
+4. 实现 `scripts/generate_instruction_data.py`：生成合成 instruction 数据
+
+**LLM 选择**：
+- 第一版：prompt-only，使用本地 Qwen2.5-7B-Instruct（通过 vLLM 部署）
+- 后续：可基于合成数据做 LoRA 微调
+
+**止损点**：
+- LLM 输出格式不稳定 → 增加 few-shot examples 或 constrained decoding
+- 延迟太高 → 降低调用频率（每小时调用一次而非每步调用）
+
+---
+
+### Sprint 5：消融实验 + 论文
+
+**目标**：完成消融实验，撰写论文。
+
+**消融维度**：
+1. MSE-only vs SPO+ loss
+2. Fixed weights vs LLM-routed weights
+3. 有/无安全回退
+4. GRU vs TSMixer/PatchTST（如时间允许）
+
+**论文结构（初步）**：
+1. Introduction：预测-控制分离的问题 + LLM 作为偏好接口的动机
+2. Related Work：decision-focused learning, MPC for buildings, LLM for control
+3. Method：架构、SPO+、LLM router
+4. Experiments：CityLearn 2023, baselines, ablations
+5. Conclusion
+
+---
+
+## Agent 任务分配
+
+| Agent | 负责模块 | 不可修改 |
+|-------|---------|---------|
+| Agent A | `data/` | models, controllers, eval, llm_router |
+| Agent B | `models/` | data, controllers, eval, llm_router |
+| Agent C | `controllers/` | data, models, eval, llm_router |
+| Agent D | `eval/` | data, models, controllers, llm_router |
+| Agent E | `llm_router/`, `scripts/` | data, models, controllers, eval |
+
+每个 Agent 只修改自己负责的目录，通过 `__init__.py` 暴露的公共接口与其他模块交互。
+
+---
+
+## 配置管理
+
+所有超参数统一放在 `configs/*.yaml` 中：
+- `data.yaml`：数据路径、特征选择、窗口大小
+- `forecast.yaml`：模型结构、训练超参数
+- `controller.yaml`：QP 权重、约束参数、horizon
+- `eval.yaml`：评估场景、基线配置
+- `llm_router.yaml`：LLM 模型路径、prompt 参数
+
+---
+
+## 关键设计决策
+
+1. **为什么用 cvxpy 而不是端到端可微分层？**
+   - cvxpy + OSQP 更稳定，SPO+ 不需要 QP 层可微分（只需要前向求解）
+   - 后续可替换为 cvxpylayers 做端到端对比
+
+2. **为什么用 central_agent 模式？**
+   - 简化第一版实现，所有建筑共享一个控制策略
+   - 后续可扩展为分布式/分层控制
+
+3. **为什么 LLM 是 prompt-only？**
+   - 快速验证 LLM 作为偏好接口的可行性
+   - LoRA 微调是增量改进，不影响架构设计

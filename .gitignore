@@ -1,0 +1,28 @@
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Virtual env / tooling
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.idea/
+.vscode/
+
+# Local tool state
+.claude/
+
+# Generated artifacts and reports
+artifacts/
+reports/
+
+# Private / internal working documents
+chat.md
+CODEX.md
+codex-execution-plan-2026-03-18.md
+floating-hugging-kay.md
+
+# OS files
+.DS_Store

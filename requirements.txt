@@ -1,0 +1,30 @@
+# Core
+numpy>=1.24
+pandas>=2.0
+scipy>=1.10
+pyyaml>=6.0
+
+# CityLearn
+CityLearn>=2.1
+
+# Deep Learning
+torch>=2.0
+torchvision>=0.15
+
+# QP Solver
+cvxpy>=1.4
+osqp>=0.6
+
+# LLM
+transformers>=4.36
+vllm>=0.3
+
+# Visualization & Reporting
+matplotlib>=3.7
+seaborn>=0.12
+
+# Testing
+pytest>=7.0
+
+# Utilities
+tqdm>=4.65

@@ -1,0 +1,13 @@
+# LLM router configuration
+model:
+  name: "Qwen/Qwen2.5-7B-Instruct"
+  backend: "vllm"  # "vllm" or "transformers"
+  temperature: 0.1
+  max_tokens: 256
+
+call_frequency: "per_step"  # "per_step" or "per_hour"
+
+lora:
+  enabled: false
+  adapter_path: null
+  instruction_data_path: "artifacts/instruction_data.jsonl"

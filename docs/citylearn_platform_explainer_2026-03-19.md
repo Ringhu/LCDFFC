@@ -22,7 +22,7 @@
 
 ## 工作流图
 
-![CityLearn 工作流](assets/notion/citylearn_workflow.png)
+![CityLearn 工作流](assets/notion/citylearn_workflow_compact.png)
 
 ## CityLearn 在当前仓库里怎么被使用
 

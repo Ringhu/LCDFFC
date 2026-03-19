@@ -121,6 +121,31 @@ def test_solve_with_cost_vector():
     print(f"PASS: solve_with_cost_vector, first_action={result[0]:.4f}")
 
 
+def test_shared_action_multi_building_support():
+    """Controller should support one shared action across heterogeneous batteries."""
+    ctrl = QPController(
+        horizon=24,
+        num_buildings=3,
+        battery_capacity=[4.0, 4.0, 3.3],
+        battery_nominal_power=[3.32, 3.32, 1.61],
+        soc_min=[0.2, 0.2, 0.2],
+        soc_max=[1.0, 1.0, 1.0],
+        p_max=1.0,
+        efficiency=[0.95, 0.95, 0.96],
+    )
+    forecast = np.column_stack([
+        np.ones(24) * 1.0,
+        np.ones(24) * 0.6,
+        np.zeros(24),
+    ])
+    weights = {"cost": 1.0, "carbon": 0.0, "peak": 0.0, "smooth": 0.0}
+    action = ctrl.act(state={"soc": [0.8, 0.8, 0.8]}, forecast=forecast, weights=weights)
+    assert action is not None
+    assert action.shape == (1,)
+    assert action[0] < 0, f"Expected discharge under high price, got {action[0]}"
+    print(f"PASS: multi_building_shared_action, action={action[0]:.4f}")
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for t in tests:

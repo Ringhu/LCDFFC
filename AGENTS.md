@@ -39,7 +39,7 @@
 - 当前可见性：`public`
 - 当前主分支：`main`
 - 当前仓库状态：本地工作区应优先保持与 `origin/main` 对齐
-- 当前阶段判断：`Sprint 2` 代码基本已落地，但尚未通过 `Sprint 2` 验收
+- 当前阶段判断：`Sprint 2` 已在本地缓存的 2023 场景下通过 `RBC` 验收，但 `oracle` 诊断链路仍待修正
 
 ### 3.2 当前真实实现状态
 
@@ -71,8 +71,9 @@
 
 - 主线仍然正确：`CityLearn -> fixed-weight forecast + QP -> uncertainty -> decision-focused -> LLM router`
 - 当前最大问题不是扩功能，而是先让固定权重 `forecast + QP` 过 `RBC` 验收线
-- 现有保存结果显示 `forecast_qp` 还没有稳定优于 `RBC`
-- 当前诊断结果显示：`myopic` 几乎打平 `RBC`，但 `oracle` 仍未优于 `RBC`，问题更可能在控制目标或动作注入，而不只是预测误差
+- 修正控制器量纲、共享动作建模、SOC 读取和 rollout warm-start 后，`learned forecast + QP` 已在本地缓存的 2023 场景下优于 `RBC`
+- 当前仍未闭环的关键问题转为：`oracle` 诊断路径显著劣化，说明 oracle target 与在线控制时序可能仍有错位或语义不一致
+- 当前保存的旧结论 `myopic≈RBC / oracle<RBC` 不能再直接作为控制器主问题的依据，必须以修正后的新复现实验为准
 - 当前环境历史上出现过 `cvxpy` 缺失，导致 `tests/test_qp.py` 无法直接运行；继续开发前优先检查依赖是否齐全
 
 ### 3.4 当前默认优先级

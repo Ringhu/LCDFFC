@@ -45,20 +45,44 @@ class QPController:
         self,
         horizon: int = 24,
         num_buildings: int = 1,
-        battery_capacity: float = 4.0,
-        soc_min: float = 0.0,
-        soc_max: float = 1.0,
+        battery_capacity: float | list[float] | np.ndarray = 4.0,
+        battery_nominal_power: float | list[float] | np.ndarray | None = None,
+        soc_min: float | list[float] | np.ndarray = 0.0,
+        soc_max: float | list[float] | np.ndarray = 1.0,
         p_max: float = 1.0,
-        efficiency: float = 0.95,
+        efficiency: float | list[float] | np.ndarray = 0.95,
+        time_step_hours: float = 1.0,
     ):
         self.horizon = horizon
         self.num_buildings = num_buildings
-        self.battery_capacity = battery_capacity
-        self.soc_min = soc_min
-        self.soc_max = soc_max
         self.p_max = p_max
-        self.efficiency = efficiency
+        self.time_step_hours = time_step_hours
+        self.battery_capacity = self._as_array(battery_capacity, num_buildings)
+        self.battery_nominal_power = self._as_array(
+            1.0 if battery_nominal_power is None else battery_nominal_power,
+            num_buildings,
+        )
+        self.soc_min = self._as_array(soc_min, num_buildings)
+        self.soc_max = self._as_array(soc_max, num_buildings)
+        self.efficiency = self._as_array(efficiency, num_buildings)
         self.fallback = SafeFallback()
+
+    @staticmethod
+    def _as_array(
+        value: float | list[float] | np.ndarray,
+        length: int,
+    ) -> np.ndarray:
+        """Convert scalar or sequence inputs to a fixed-length float array."""
+        arr = np.asarray(value, dtype=np.float32)
+
+        if arr.ndim == 0:
+            return np.full(length, float(arr), dtype=np.float32)
+
+        arr = arr.reshape(-1)
+        if len(arr) != length:
+            raise ValueError(f"Expected {length} values, got {len(arr)}")
+
+        return arr.astype(np.float32)
 
     def act(
         self,
@@ -82,8 +106,7 @@ class QPController:
         """
         constraints = constraints or {}
         soc = state["soc"]
-        if isinstance(soc, (list, np.ndarray)):
-            soc = float(soc[0]) if len(soc) > 0 else 0.5
+        soc = self._as_array(soc, self.num_buildings)
 
         # Clip forecast to horizon
         H = min(self.horizon, len(forecast))
@@ -128,16 +151,22 @@ class QPController:
         """
         constraints = constraints or {}
         H = self.horizon
-        actions = cp.Variable(H)
-        soc = cp.Variable(H + 1)
+        charge = cp.Variable(H, nonneg=True)
+        discharge = cp.Variable(H, nonneg=True)
+        action = charge - discharge
+        soc = cp.Variable((self.num_buildings, H + 1))
 
         # Extract forecast components
         prices = forecast[:H, COL_PRICE] if forecast.shape[1] > COL_PRICE else np.ones(H)
-        base_load = forecast[:H, COL_LOAD] if forecast.shape[1] > COL_LOAD else np.zeros(H)
-        solar = forecast[:H, COL_SOLAR] if forecast.shape[1] > COL_SOLAR else np.zeros(H)
+        base_load_avg = forecast[:H, COL_LOAD] if forecast.shape[1] > COL_LOAD else np.zeros(H)
+        solar_avg = forecast[:H, COL_SOLAR] if forecast.shape[1] > COL_SOLAR else np.zeros(H)
+        aggregate_base_load = base_load_avg * self.num_buildings
+        aggregate_solar = solar_avg * self.num_buildings
+        aggregate_storage_power = float(np.sum(self.battery_nominal_power) * self.time_step_hours)
 
-        # Net load = base_load - solar + battery_action (positive = charge = draw from grid)
-        net_load = base_load - solar + actions
+        # Forecast load/solar are building averages; scale them back to district totals.
+        # Positive action means charging all building batteries with the same normalized ratio.
+        net_load = aggregate_base_load - aggregate_solar + aggregate_storage_power * action
 
         # === Objective terms ===
         objective_terms = []
@@ -164,7 +193,7 @@ class QPController:
         # 4) Action smoothness: Σ (action[t] - action[t-1])²
         w_smooth = weights.get("smooth", 0)
         if w_smooth > 0:
-            objective_terms.append(w_smooth * cp.sum_squares(actions[1:] - actions[:-1]))
+            objective_terms.append(w_smooth * cp.sum_squares(action[1:] - action[:-1]))
 
         if not objective_terms:
             objective_terms.append(0)
@@ -172,16 +201,21 @@ class QPController:
         objective = cp.Minimize(sum(objective_terms))
 
         # === Constraints ===
-        # Battery SOC dynamics (simplified single efficiency)
-        eff = self.efficiency
-        cap = self.battery_capacity
+        charge_gain = (
+            self.efficiency * self.battery_nominal_power * self.time_step_hours
+        ) / self.battery_capacity
+        discharge_gain = (
+            self.battery_nominal_power * self.time_step_hours
+        ) / (self.efficiency * self.battery_capacity)
         constraints_list = [
-            soc[0] == soc_init,
-            soc[1:] == soc[:-1] + eff * actions / cap,
-            soc >= self.soc_min,
-            soc <= self.soc_max,
-            actions >= -self.p_max,
-            actions <= self.p_max,
+            soc[:, 0] == soc_init,
+            soc[:, 1:] == soc[:, :-1]
+            + cp.multiply(charge_gain[:, None], cp.reshape(charge, (1, H), order="C"))
+            - cp.multiply(discharge_gain[:, None], cp.reshape(discharge, (1, H), order="C")),
+            soc >= self.soc_min[:, None],
+            soc <= self.soc_max[:, None],
+            charge <= self.p_max,
+            discharge <= self.p_max,
         ]
 
         # Peak epigraph constraint
@@ -191,12 +225,13 @@ class QPController:
         # Reserve SOC constraint
         reserve_soc = constraints.get("reserve_soc")
         if reserve_soc is not None:
-            constraints_list.append(soc[H] >= reserve_soc)
+            reserve = self._as_array(reserve_soc, self.num_buildings)
+            constraints_list.append(soc[:, H] >= reserve)
 
         # Custom max charge rate
         max_charge = constraints.get("max_charge_rate")
         if max_charge is not None:
-            constraints_list.append(actions <= max_charge)
+            constraints_list.append(charge <= max_charge)
 
         # === Solve ===
         prob = cp.Problem(objective, constraints_list)
@@ -207,7 +242,7 @@ class QPController:
             return None
 
         if prob.status in (cp.OPTIMAL, cp.OPTIMAL_INACCURATE):
-            return actions.value
+            return action.value
         return None
 
     def solve_with_cost_vector(

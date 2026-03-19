@@ -6,10 +6,10 @@
 
 - `Sprint 0`：已完成
 - `Sprint 1`：基本完成
-- `Sprint 2`：代码基本落地，但尚未通过验收
+- `Sprint 2`：已在本地缓存的 2023 场景下通过 `RBC` 验收，`oracle` 诊断链路仍待修正
 - `Sprint 3+`：尚未进入实做阶段，只有少量骨架或接口预留
 
-当前最优先目标不是继续铺后续功能，而是先完成 `Sprint 2` 的验收：让固定权重 `forecast + QP` 在 `cost / carbon / peak` 中至少 2 项打平或优于 `RBC`。
+当前最优先目标不再是“证明 learned+QP 能否过 `RBC`”，而是先把 `Sprint 2` 的诊断链路补齐：解释为什么 `oracle` 模式仍显著劣化，并把通过验收的配置、结果和文档固定下来。
 
 ## 总体目标
 
@@ -53,7 +53,7 @@
 
 ---
 
-### Sprint 2：控制器 + 基线评估（部分完成，待验证）
+### Sprint 2：控制器 + 基线评估（基本完成，诊断待补齐）
 
 **目标**：QP 控制器 + RBC 基线，端到端跑通 CityLearn 评估。
 
@@ -78,10 +78,15 @@
 **当前状态补充**：
 
 - `controllers/qp_controller.py`、`eval/run_rbc.py`、`eval/run_controller.py`、`eval/run_all.py` 已存在
-- 当前保存结果显示 `forecast_qp` 仍未稳定优于 `RBC`
+- 修正控制器量纲、共享动作建模、SOC 读取和 rollout warm-start 后，`learned forecast + QP` 在本地缓存的 2023 场景下已优于 `RBC`
 - 当前环境历史上出现过 `cvxpy` 缺失，进入下一阶段前先恢复可复现运行
 - 当前已补 `learned / oracle / myopic` 三种诊断模式
-- 当前诊断结果显示 `myopic` 几乎打平 `RBC`，但 `oracle` 仍未优于 `RBC`
+- 当前新复现实验结果显示：
+  - `learned`: cost `32.5952`, carbon `497.1363`, peak `15.1444`
+  - `RBC`: cost `33.0114`, carbon `499.6858`, peak `16.4417`
+  - `myopic`: 基本打平 `RBC`
+  - `oracle`: 仍明显劣于 `RBC`
+- 因此下一步不应直接进入 uncertainty，而应先修正 `oracle` target 与在线控制时序/语义对齐问题，并把通过验收的 learned 配置固化
 
 ---
 

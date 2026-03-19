@@ -11,6 +11,8 @@ from eval.run_controller import (
     TARGET_COLS,
     build_myopic_forecast,
     build_oracle_forecast,
+    get_battery_params,
+    get_current_socs,
     load_oracle_targets,
 )
 
@@ -47,6 +49,56 @@ def test_load_oracle_targets():
     assert oracle.ndim == 2
     assert oracle.shape[1] == 3
     print("PASS: load_oracle_targets")
+
+
+def test_get_battery_params_uses_per_building_metadata():
+    class Battery:
+        def __init__(self, capacity, nominal_power, efficiency, depth_of_discharge):
+            self.capacity = capacity
+            self.nominal_power = nominal_power
+            self.efficiency = efficiency
+            self.depth_of_discharge = depth_of_discharge
+
+    class Building:
+        def __init__(self, battery):
+            self.electrical_storage = battery
+
+    class Env:
+        def __init__(self):
+            self.buildings = [
+                Building(Battery(4.0, 3.32, 0.95, 0.8)),
+                Building(Battery(3.3, 1.61, 0.96, 0.8)),
+            ]
+
+    params = get_battery_params(Env())
+    assert np.allclose(params["capacity"], [4.0, 3.3])
+    assert np.allclose(params["nominal_power"], [3.32, 1.61])
+    assert np.allclose(params["efficiency"], [0.95, 0.96])
+    assert np.allclose(params["soc_min"], [0.2, 0.2])
+    assert np.allclose(params["soc_max"], [1.0, 1.0])
+    print("PASS: battery_params_from_env")
+
+
+def test_get_current_socs_reads_current_timestep():
+    class Battery:
+        def __init__(self, soc):
+            self.soc = np.array(soc, dtype=np.float32)
+
+    class Building:
+        def __init__(self, battery):
+            self.electrical_storage = battery
+
+    class Env:
+        def __init__(self):
+            self.time_step = 2
+            self.buildings = [
+                Building(Battery([0.2, 0.4, 0.0])),
+                Building(Battery([0.2, 0.6, 0.0])),
+            ]
+
+    socs = get_current_socs(Env())
+    assert np.allclose(socs, [0.4, 0.6])
+    print("PASS: current_soc_indexing")
 
 
 if __name__ == "__main__":

@@ -87,6 +87,40 @@ def load_oracle_targets(path: str, target_cols: list[int] | None = None) -> np.n
     return loaded["data"][:, cols].astype(np.float32)
 
 
+def get_battery_params(env) -> dict[str, list[float]]:
+    """Extract per-building battery parameters from a CityLearn environment."""
+    capacities = []
+    nominal_powers = []
+    efficiencies = []
+    soc_mins = []
+    soc_maxs = []
+
+    for building in env.buildings:
+        battery = building.electrical_storage
+        capacities.append(float(battery.capacity))
+        nominal_powers.append(float(battery.nominal_power))
+        efficiencies.append(float(battery.efficiency))
+        soc_mins.append(float(1.0 - battery.depth_of_discharge))
+        soc_maxs.append(1.0)
+
+    return {
+        "capacity": capacities,
+        "nominal_power": nominal_powers,
+        "efficiency": efficiencies,
+        "soc_min": soc_mins,
+        "soc_max": soc_maxs,
+    }
+
+
+def get_current_socs(env) -> list[float]:
+    """Read each building battery's current SOC at the environment time step."""
+    soc_index = max(env.time_step - 1, 0)
+    return [
+        float(building.electrical_storage.soc[soc_index])
+        for building in env.buildings
+    ]
+
+
 def build_oracle_forecast(
     oracle_targets: np.ndarray,
     current_step: int,
@@ -130,6 +164,7 @@ def run_forecast_control(
     device: str = "cpu",
     forecast_mode: str = "learned",
     oracle_data_path: str = "artifacts/forecast_data.npz",
+    constraints: dict | None = None,
 ) -> dict:
     """Run the forecast-then-control pipeline on CityLearn.
 
@@ -145,6 +180,7 @@ def run_forecast_control(
         device: torch device.
         forecast_mode: One of ``learned``, ``oracle``, or ``myopic``.
         oracle_data_path: Prepared data path used by oracle mode.
+        constraints: Optional controller constraints such as reserve_soc.
 
     Returns:
         Dict of KPI values.
@@ -153,6 +189,7 @@ def run_forecast_control(
 
     model_cfg = forecast_config["model"]
     horizon = model_cfg["horizon"]
+    constraints = constraints or {}
     mean = None
     std = None
     model = None
@@ -178,30 +215,33 @@ def run_forecast_control(
     else:
         raise ValueError(f"Unsupported forecast_mode: {forecast_mode}")
 
-    # Controller
-    batt_cfg = controller_config.get("battery", {})
-    ctrl = QPController(
-        horizon=controller_config.get("horizon", horizon),
-        battery_capacity=batt_cfg.get("capacity", 4.0),
-        soc_min=batt_cfg.get("soc_min", 0.0),
-        soc_max=batt_cfg.get("soc_max", 1.0),
-        p_max=batt_cfg.get("p_max", 1.0),
-        efficiency=batt_cfg.get("efficiency", 0.95),
-    )
-
     # CityLearn env
     env = CityLearnEnv(schema=schema, central_agent=True)
     obs_names = env.observation_names[0]
     num_actions = len(env.action_names[0])
     num_buildings = len(env.buildings)
     history_len = model_cfg.get("history_len", 24)
+    battery_params = get_battery_params(env)
+
+    # Controller
+    batt_cfg = controller_config.get("battery", {})
+    ctrl = QPController(
+        horizon=controller_config.get("horizon", horizon),
+        num_buildings=num_buildings,
+        battery_capacity=battery_params["capacity"],
+        battery_nominal_power=battery_params["nominal_power"],
+        soc_min=battery_params["soc_min"],
+        soc_max=battery_params["soc_max"],
+        p_max=batt_cfg.get("p_max", 1.0),
+        efficiency=battery_params["efficiency"],
+        time_step_hours=env.seconds_per_time_step / 3600.0,
+    )
 
     obs = env.reset()
     features = obs_to_features(obs[0][0] if isinstance(obs[0][0], list) else obs[0], obs_names)
 
     # History buffer
-    history_buf = deque(maxlen=history_len)
-    history_buf.append(features)
+    history_buf = deque([features.copy() for _ in range(history_len)], maxlen=history_len)
 
     terminated = False
     truncated = False
@@ -209,39 +249,36 @@ def run_forecast_control(
     actions_log = []
 
     while not (terminated or truncated):
-        if len(history_buf) >= history_len:
-            history_arr = np.array(history_buf)
-            current_features = history_arr[-1]
+        history_arr = np.array(history_buf)
+        current_features = history_arr[-1]
 
-            if forecast_mode == "learned":
-                history_norm = (history_arr - mean) / std
-                history_tensor = torch.tensor(
-                    history_norm, dtype=torch.float32
-                ).unsqueeze(0).to(device)
+        if forecast_mode == "learned":
+            history_norm = (history_arr - mean) / std
+            history_tensor = torch.tensor(
+                history_norm, dtype=torch.float32
+            ).unsqueeze(0).to(device)
 
-                with torch.no_grad():
-                    pred_norm = model(history_tensor).cpu().numpy()[0]
+            with torch.no_grad():
+                pred_norm = model(history_tensor).cpu().numpy()[0]
 
-                qp_forecast = pred_norm * std[TARGET_COLS] + mean[TARGET_COLS]
-            elif forecast_mode == "oracle":
-                qp_forecast = build_oracle_forecast(oracle_targets, step, ctrl.horizon)
-            else:
-                qp_forecast = build_myopic_forecast(current_features, ctrl.horizon)
-
-            # Get current SOC (average across buildings)
-            soc_vals = [b.electrical_storage.soc[-1] / b.electrical_storage.capacity
-                        for b in env.buildings]
-            avg_soc = float(np.mean(soc_vals))
-
-            # Get action from controller
-            action = ctrl.act(
-                state={"soc": avg_soc},
-                forecast=qp_forecast,
-                weights=weights,
-            )
-            battery_action = float(action[0])
+            qp_forecast = pred_norm * std[TARGET_COLS] + mean[TARGET_COLS]
+        elif forecast_mode == "oracle":
+            qp_forecast = build_oracle_forecast(oracle_targets, step, ctrl.horizon)
         else:
-            battery_action = 0.0
+            qp_forecast = build_myopic_forecast(current_features, ctrl.horizon)
+
+        # The same normalized action is broadcast to all buildings, so the
+        # controller tracks each battery's SOC separately.
+        soc_vals = get_current_socs(env)
+
+        # Get action from controller
+        action = ctrl.act(
+            state={"soc": soc_vals},
+            forecast=qp_forecast,
+            weights=weights,
+            constraints=constraints,
+        )
+        battery_action = float(action[0])
 
         # Build full action vector: set electrical_storage actions only
         action_names = env.action_names[0]
@@ -314,6 +351,11 @@ def main():
         choices=["learned", "oracle", "myopic"],
     )
     parser.add_argument("--oracle_data", type=str, default="artifacts/forecast_data.npz")
+    parser.add_argument("--weight_cost", type=float, default=None)
+    parser.add_argument("--weight_carbon", type=float, default=None)
+    parser.add_argument("--weight_peak", type=float, default=None)
+    parser.add_argument("--weight_smooth", type=float, default=None)
+    parser.add_argument("--reserve_soc", type=float, default=None)
     args = parser.parse_args()
 
     with open(args.forecast_config) as f:
@@ -324,6 +366,19 @@ def main():
     weights = controller_config.get("default_weights", {
         "cost": 0.4, "carbon": 0.2, "peak": 0.3, "smooth": 0.1,
     })
+    overrides = {
+        "cost": args.weight_cost,
+        "carbon": args.weight_carbon,
+        "peak": args.weight_peak,
+        "smooth": args.weight_smooth,
+    }
+    weights = {
+        key: value if overrides[key] is None else overrides[key]
+        for key, value in weights.items()
+    }
+    constraints = {}
+    if args.reserve_soc is not None:
+        constraints["reserve_soc"] = args.reserve_soc
 
     kpis = run_forecast_control(
         schema=args.schema,
@@ -337,6 +392,7 @@ def main():
         device=args.device,
         forecast_mode=args.forecast_mode,
         oracle_data_path=args.oracle_data,
+        constraints=constraints,
     )
 
     print(f"\n{args.tag} KPIs:")

@@ -99,6 +99,22 @@ python eval/run_controller.py \
   --forecast_mode oracle \
   --oracle_data artifacts/forecast_data.npz \
   --device cpu
+
+# 7. 覆盖权重和 reserve_soc 做快速搜索
+python eval/run_controller.py \
+  --schema /cluster/home/user1/.cache/citylearn/v2.5.0/datasets/citylearn_challenge_2023_phase_1/schema.json \
+  --forecast_config configs/forecast.yaml \
+  --controller_config configs/controller.yaml \
+  --output_dir reports/ \
+  --tag oracle_peak5 \
+  --forecast_mode oracle \
+  --oracle_data artifacts/forecast_data.npz \
+  --weight_cost 0 \
+  --weight_carbon 0 \
+  --weight_peak 5 \
+  --weight_smooth 0 \
+  --reserve_soc 0.2 \
+  --device cpu
 ```
 
 ## 目录结构
@@ -124,8 +140,9 @@ LCDFFC/
 
 ## 当前已知问题
 
-- 现有保存结果里，`forecast_qp` 仍未稳定优于 `RBC`
-- 当前新增诊断结果显示：`myopic` 几乎打平 `RBC`，但 `oracle` 仍未优于 `RBC`
+- 修正控制器量纲、共享动作建模、SOC 读取和 rollout warm-start 后，`learned forecast + QP` 已在本地缓存的 2023 场景下优于 `RBC`
+- 当前 `myopic` 基本打平 `RBC`，但 `oracle` 仍明显劣于 `RBC`，说明 oracle target 与在线控制时序/语义仍需继续校验
+- 新增的权重覆盖 CLI 适合做小规模 sweep，但在 `oracle` 路径修正前，不应把 oracle 结果直接当成上界
 - 当前环境可能缺少 `cvxpy`，导致 `tests/test_qp.py` 无法直接运行
 - 文档和代码曾发生过漂移，当前以 `AGENTS.md` 为主工作约定
 

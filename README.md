@@ -141,8 +141,9 @@ LCDFFC/
 ## 当前已知问题
 
 - 修正控制器量纲、共享动作建模、SOC 读取和 rollout warm-start 后，`learned forecast + QP` 已在本地缓存的 2023 场景下优于 `RBC`
-- 当前 `myopic` 基本打平 `RBC`，但 `oracle` 仍明显劣于 `RBC`，说明 oracle target 与在线控制时序/语义仍需继续校验
-- 新增的权重覆盖 CLI 适合做小规模 sweep，但在 `oracle` 路径修正前，不应把 oracle 结果直接当成上界
+- 当前 `myopic` 基本打平 `RBC`，`oracle` 仍明显劣于 `RBC`
+- `oracle_data` 与零动作 rollout 的 `price/load/solar` 时序已经核对一致，且求解器已改为优先 `CLARABEL` 以避免退化充放电解
+- 因此现在更合理的结论不是“oracle 索引有 bug”，而是当前 oracle target 与控制目标之间仍有结构失配；新增的权重覆盖 CLI 适合做小规模 sweep，但不能把 oracle 结果直接当成上界
 - 当前环境可能缺少 `cvxpy`，导致 `tests/test_qp.py` 无法直接运行
 - 文档和代码曾发生过漂移，当前以 `AGENTS.md` 为主工作约定
 

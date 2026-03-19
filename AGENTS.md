@@ -72,8 +72,9 @@
 - 主线仍然正确：`CityLearn -> fixed-weight forecast + QP -> uncertainty -> decision-focused -> LLM router`
 - 当前最大问题不是扩功能，而是先让固定权重 `forecast + QP` 过 `RBC` 验收线
 - 修正控制器量纲、共享动作建模、SOC 读取和 rollout warm-start 后，`learned forecast + QP` 已在本地缓存的 2023 场景下优于 `RBC`
-- 当前仍未闭环的关键问题转为：`oracle` 诊断路径显著劣化，说明 oracle target 与在线控制时序可能仍有错位或语义不一致
-- 当前保存的旧结论 `myopic≈RBC / oracle<RBC` 不能再直接作为控制器主问题的依据，必须以修正后的新复现实验为准
+- `oracle_data` 与零动作 rollout 的 `price/load/solar` 时序已核对一致，`CLARABEL -> OSQP` 求解顺序也已消除一类退化解
+- 当前仍未闭环的关键问题转为：即使在时序对齐和求解器修正后，`oracle` 仍显著劣于 `learned`，说明 oracle target 与当前控制目标之间存在结构失配
+- 当前可作为固定事实的新诊断结果是：`learned` 优于 `RBC`，`myopic` 近似打平 `RBC`，`oracle` 仍明显更差
 - 当前环境历史上出现过 `cvxpy` 缺失，导致 `tests/test_qp.py` 无法直接运行；继续开发前优先检查依赖是否齐全
 
 ### 3.4 当前默认优先级

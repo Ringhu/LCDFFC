@@ -146,6 +146,28 @@ def test_shared_action_multi_building_support():
     print(f"PASS: multi_building_shared_action, action={action[0]:.4f}")
 
 
+def test_no_export_incentive_when_already_net_negative():
+    """High prices should not induce extra discharge into export-only conditions."""
+    ctrl = QPController(
+        horizon=24,
+        battery_capacity=4.0,
+        battery_nominal_power=3.32,
+        soc_min=0.2,
+        soc_max=1.0,
+        p_max=1.0,
+        efficiency=0.95,
+    )
+    forecast = np.column_stack([
+        np.ones(24) * 1.0,
+        np.zeros(24),
+        np.ones(24) * 5.0,
+    ])
+    weights = {"cost": 1.0, "carbon": 0.0, "peak": 0.0, "smooth": 0.0}
+    action = ctrl.act(state={"soc": 0.8}, forecast=forecast, weights=weights)
+    assert action[0] > -1e-3, f"Expected no export-seeking discharge, got {action[0]}"
+    print(f"PASS: no_export_incentive, action={action[0]:.4f}")
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for t in tests:

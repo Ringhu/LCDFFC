@@ -82,11 +82,12 @@
 - 当前环境历史上出现过 `cvxpy` 缺失，进入下一阶段前先恢复可复现运行
 - 当前已补 `learned / oracle / myopic` 三种诊断模式
 - 当前新复现实验结果显示：
-  - `learned`: cost `32.5952`, carbon `497.1363`, peak `15.1444`
+  - `learned`: cost `32.4935`, carbon `496.2018`, peak `14.9950`
   - `RBC`: cost `33.0114`, carbon `499.6858`, peak `16.4417`
-  - `myopic`: 基本打平 `RBC`
-  - `oracle`: 仍明显劣于 `RBC`
-- 因此下一步不应直接进入 uncertainty，而应先修正 `oracle` target 与在线控制时序/语义对齐问题，并把通过验收的 learned 配置固化
+  - `myopic`: cost `33.0120`, carbon `499.6928`, peak `16.4417`，基本打平 `RBC`
+  - `oracle`: cost `33.6512`, carbon `510.9105`, peak `17.1023`，仍明显劣于 `RBC`
+- 当前已确认 `oracle_data` 与零动作 rollout 的 `price/load/solar` 时序一致，且 `CLARABEL -> OSQP` 求解顺序已消除一类退化解
+- 因此下一步不应直接进入 uncertainty，而应先解释为什么 oracle target 在当前控制目标下会系统性劣化，并把当前通过验收的 learned 配置和命令固化
 
 ---
 

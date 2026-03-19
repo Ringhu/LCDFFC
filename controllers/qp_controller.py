@@ -167,22 +167,23 @@ class QPController:
         # Forecast load/solar are building averages; scale them back to district totals.
         # Positive action means charging all building batteries with the same normalized ratio.
         net_load = aggregate_base_load - aggregate_solar + aggregate_storage_power * action
+        grid_import = cp.Variable(H, nonneg=True)
 
         # === Objective terms ===
         objective_terms = []
 
-        # 1) Electricity cost: Σ price[t] * net_load[t]
+        # 1) Electricity cost: Σ price[t] * max(net_load[t], 0)
         w_cost = weights.get("cost", 0)
         if w_cost > 0:
-            objective_terms.append(w_cost * (prices @ net_load))
+            objective_terms.append(w_cost * (prices @ grid_import))
 
-        # 2) Carbon emissions: Σ carbon[t] * net_load[t]
+        # 2) Carbon emissions: Σ carbon[t] * max(net_load[t], 0)
         w_carbon = weights.get("carbon", 0)
         if w_carbon > 0 and carbon_intensity is not None:
             carbon = carbon_intensity[:H]
-            objective_terms.append(w_carbon * (carbon @ net_load))
+            objective_terms.append(w_carbon * (carbon @ grid_import))
 
-        # 3) Peak demand: epigraph formulation — min peak_var s.t. net_load[t] <= peak_var
+        # 3) Peak demand: epigraph formulation on import load.
         w_peak = weights.get("peak", 0)
         if w_peak > 0:
             peak_var = cp.Variable()
@@ -194,6 +195,9 @@ class QPController:
         w_smooth = weights.get("smooth", 0)
         if w_smooth > 0:
             objective_terms.append(w_smooth * cp.sum_squares(action[1:] - action[:-1]))
+
+        # Tie-break toward zero action when the economic objective is flat.
+        objective_terms.append(1e-6 * (cp.sum_squares(charge) + cp.sum_squares(discharge)))
 
         if not objective_terms:
             objective_terms.append(0)
@@ -216,11 +220,12 @@ class QPController:
             soc <= self.soc_max[:, None],
             charge <= self.p_max,
             discharge <= self.p_max,
+            grid_import >= net_load,
         ]
 
         # Peak epigraph constraint
         if peak_var is not None:
-            constraints_list.append(net_load <= peak_var)
+            constraints_list.append(grid_import <= peak_var)
 
         # Reserve SOC constraint
         reserve_soc = constraints.get("reserve_soc")
@@ -235,13 +240,21 @@ class QPController:
 
         # === Solve ===
         prob = cp.Problem(objective, constraints_list)
-        try:
-            prob.solve(solver=cp.OSQP, warm_start=True, max_iter=4000,
-                       eps_abs=1e-3, eps_rel=1e-3)
-        except cp.SolverError:
-            return None
+        solved = False
+        for solver, kwargs in (
+            (cp.CLARABEL, {}),
+            (cp.OSQP, {"warm_start": True, "max_iter": 4000, "eps_abs": 1e-3, "eps_rel": 1e-3}),
+        ):
+            try:
+                prob.solve(solver=solver, **kwargs)
+            except cp.SolverError:
+                continue
 
-        if prob.status in (cp.OPTIMAL, cp.OPTIMAL_INACCURATE):
+            if prob.status in (cp.OPTIMAL, cp.OPTIMAL_INACCURATE):
+                solved = True
+                break
+
+        if solved:
             return action.value
         return None
 

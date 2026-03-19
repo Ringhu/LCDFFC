@@ -1,0 +1,41 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
+from pathlib import Path
+
+df = pd.read_csv("artifacts/forecast_data.csv")
+seg = df.iloc[:48].copy()
+x = list(range(len(seg)))
+series = seg["non_shiftable_load_avg"].tolist()
+fig = plt.figure(figsize=(10, 6.2))
+gs = fig.add_gridspec(3, 1, height_ratios=[3.4, 0.7, 0.9], left=0.10, right=0.96, top=0.88, bottom=0.10, hspace=0.32)
+ax = fig.add_subplot(gs[0,0])
+ax_evt = fig.add_subplot(gs[1,0])
+ax_txt = fig.add_subplot(gs[2,0])
+fig.suptitle("Example Segment from forecast_data.csv", x=0.10, y=0.95, ha="left", fontsize=16, fontweight="bold")
+fig.text(0.10, 0.905, "First 48 timesteps of non_shiftable_load_avg in CityLearn 2023 Phase 1", fontsize=10, color="#4B5563", ha="left")
+ax.plot(x, series, color="#0B3954", linewidth=1.8)
+ax.fill_between(x, series, color="#BFD7EA", alpha=0.45)
+ax.set_xlim(0, 47)
+ax.set_ylabel("Load")
+ax.set_xticks([0, 12, 24, 36, 47])
+ax.grid(alpha=0.18)
+ax.spines[["top", "right"]].set_visible(False)
+ax_evt.set_xlim(0, 47)
+ax_evt.set_ylim(0, 1)
+ax_evt.set_yticks([])
+ax_evt.spines[["top", "right", "left"]].set_visible(False)
+ax_evt.set_xlabel("Timestep")
+ax_evt.add_patch(Rectangle((0, 0.18), 24, 0.52, color="#577590", alpha=0.92))
+ax_evt.add_patch(Rectangle((24, 0.18), 24, 0.52, color="#43AA8B", alpha=0.92))
+ax_evt.text(12, 0.44, "day 1", ha="center", va="center", fontsize=9, color="white")
+ax_evt.text(36, 0.44, "day 2", ha="center", va="center", fontsize=9, color="white")
+ax_txt.axis("off")
+ax_txt.text(0.0, 0.72, "sample_id: forecast_data:first_48_steps", fontsize=9.5, family="monospace")
+ax_txt.text(0.0, 0.34, "Each point is one CityLearn timestep after aggregation to the central-agent feature space used by the current predictor/controller pipeline.", fontsize=9.5, color="#374151")
+ax_txt.text(0.0, 0.02, "day 1: steps 0-23 | day 2: steps 24-47", fontsize=9, color="#6B7280")
+Path("docs/assets/notion").mkdir(parents=True, exist_ok=True)
+fig.savefig("docs/assets/notion/citylearn_series.png", dpi=180, bbox_inches="tight")
+plt.close(fig)

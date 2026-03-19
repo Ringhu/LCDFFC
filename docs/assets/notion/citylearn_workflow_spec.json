@@ -1,21 +1,95 @@
 {
-  "title": "CityLearn in LCDFFC",
-  "subtitle": "How schema, environment, exported data, forecast, controller, and simulation connect in the current repository",
+  "title": "CityLearn Workflow in LCDFFC",
+  "subtitle": "Environment -> export -> forecast -> control -> rollout",
   "nodes": [
-    {"id": "schema", "label": "schema.json\nCityLearn scenario", "x": 0.5, "y": 2.8, "w": 2.3, "h": 0.95, "color": "#D8F3DC"},
-    {"id": "env", "label": "CityLearnEnv\ncentral_agent=True", "x": 3.5, "y": 2.8, "w": 2.5, "h": 0.95, "color": "#B7E4C7"},
-    {"id": "export", "label": "prepare_citylearn.py\nzero-action replay", "x": 6.8, "y": 2.8, "w": 2.7, "h": 0.95, "color": "#95D5B2"},
-    {"id": "dataset", "label": "forecast_data.csv / npz\n9-column training data", "x": 10.3, "y": 2.8, "w": 2.8, "h": 0.95, "color": "#74C69D"},
-    {"id": "gru", "label": "GRU forecast\nlearned / oracle / myopic", "x": 13.9, "y": 2.8, "w": 2.9, "h": 0.95, "color": "#52B788"},
-    {"id": "qp", "label": "QPController\nshared battery action", "x": 17.6, "y": 2.8, "w": 2.7, "h": 0.95, "color": "#40916C"},
-    {"id": "rollout", "label": "run_controller.py\nstep-by-step rollout", "x": 21.1, "y": 2.8, "w": 2.8, "h": 0.95, "color": "#2D6A4F"}
+    {
+      "id": "schema",
+      "label": "schema.json\nCityLearn scenario",
+      "x": 1.0,
+      "y": 10.8,
+      "w": 4.8,
+      "h": 1.0,
+      "color": "#DDEBDD"
+    },
+    {
+      "id": "env",
+      "label": "CityLearnEnv\ncentral_agent=True",
+      "x": 1.0,
+      "y": 9.1,
+      "w": 4.8,
+      "h": 1.0,
+      "color": "#C7E5D0"
+    },
+    {
+      "id": "export",
+      "label": "prepare_citylearn.py\nzero-action replay",
+      "x": 1.0,
+      "y": 7.4,
+      "w": 4.8,
+      "h": 1.0,
+      "color": "#A8DDB5"
+    },
+    {
+      "id": "dataset",
+      "label": "forecast_data.csv / npz\n9-column training data",
+      "x": 1.0,
+      "y": 5.7,
+      "w": 4.8,
+      "h": 1.0,
+      "color": "#7BCCC4"
+    },
+    {
+      "id": "forecast",
+      "label": "GRU / oracle / myopic\nfuture horizon forecast",
+      "x": 1.0,
+      "y": 4.0,
+      "w": 4.8,
+      "h": 1.0,
+      "color": "#4EB3D3"
+    },
+    {
+      "id": "qp",
+      "label": "QPController\nshared battery action",
+      "x": 1.0,
+      "y": 2.3,
+      "w": 4.8,
+      "h": 1.0,
+      "color": "#2B8CBE"
+    },
+    {
+      "id": "rollout",
+      "label": "run_controller.py\nstep-by-step rollout",
+      "x": 1.0,
+      "y": 0.6,
+      "w": 4.8,
+      "h": 1.0,
+      "color": "#08589E"
+    }
   ],
   "edges": [
-    ["schema", "env"],
-    ["env", "export"],
-    ["export", "dataset"],
-    ["dataset", "gru"],
-    ["gru", "qp"],
-    ["qp", "rollout"]
+    [
+      "schema",
+      "env"
+    ],
+    [
+      "env",
+      "export"
+    ],
+    [
+      "export",
+      "dataset"
+    ],
+    [
+      "dataset",
+      "forecast"
+    ],
+    [
+      "forecast",
+      "qp"
+    ],
+    [
+      "qp",
+      "rollout"
+    ]
   ]
 }

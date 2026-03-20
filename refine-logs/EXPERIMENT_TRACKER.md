@@ -14,3 +14,4 @@
 | R010 | M5 | 扩展 | 最佳 router 在 OOD weather/price 下 | shifted | degradation | NICE | TODO | 仅在主结果成立后运行 |
 | R011 | M2+ | review-selected 改进 | text expert-selector router (`text_v4`) | test | regime regret | MUST | DONE | 基于 auto-review 选择的下一版；当前是已验证的最佳文本路由版本，并新增 `text_best` 别名固定这一状态 |
 | R012 | M2+ | 误差归因 | `text_best` segment-level gap analysis | test | per-regime delta / route stats | MUST | DONE | 已新增 `eval/analyze_preference_shift_gap.py`；当前结论是 `text_best` 相对 `v2` 的主要优势来自 `cost / carbon / peak` 三段，而剩余短板主要落在 `reserve` 与部分 `carbon` 区段 |
+| R013 | M4+ | targeted ablation | `reserve_drop_guard` vs `carbon_misroute` | shifted | KPI delta / reserve gap / fallback gain | MUST | DONE | 已完成 GPU3 sanity 与 GPU2 全量对照；当前证据显示 `reserve` 是更强的主敏感点，`carbon` 是次要但真实存在的误差来源 |

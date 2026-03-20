@@ -127,6 +127,30 @@ def test_transition_wrong_expert_corruption_misroutes_carbon_regime():
     assert strategy["weights"]["carbon"] <= 0.1
 
 
+def test_reserve_drop_guard_corruption_only_removes_reserve_constraint():
+    strategy = build_corrupted_strategy(
+        {
+            "regime_name": "reserve",
+            "instruction": "Resilience is the main priority.",
+        },
+        corruption_mode="reserve_drop_guard",
+    )
+    assert strategy["constraints"]["reserve_soc"] is None
+    assert strategy["weights"]["cost"] == 0.65
+
+
+def test_carbon_misroute_corruption_forces_cost_heavy_profile():
+    strategy = build_corrupted_strategy(
+        {
+            "regime_name": "carbon",
+            "instruction": "Carbon reduction is the main priority.",
+        },
+        corruption_mode="carbon_misroute",
+    )
+    assert strategy["weights"]["cost"] == 0.65
+    assert strategy["weights"]["carbon"] == 0.1
+
+
 def test_summarize_routes_counts_corruption_and_fallback():
     summary = summarize_routes(
         [

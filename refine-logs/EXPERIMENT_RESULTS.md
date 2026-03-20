@@ -563,3 +563,144 @@ sanity 结果确认了：
 也就是说，下一步不该是“更会读文本”，而应是：
 
 > 更好地在 regime 切换和局部短板上做 expert persistence 与 switching control。
+
+## targeted ablation：`reserve_drop_guard` vs `carbon_misroute`
+
+在 transition-aware corruption 之后，下一步没有直接做 `v5`，而是先按 review note：
+
+- `refine-logs/auto-review/2026-03-20-targeted-ablation-next-step.md`
+
+做了两类更窄的 targeted ablation，用来回答一个更具体的问题：
+
+> 当前 `text_best` 的剩余误差，主要是因为 `reserve` 保护不足，还是因为 `carbon` 段错误路由？
+
+### 这轮新增了什么
+
+在 `eval/run_preference_shift.py` 中新增了两个 regime-specific corruption：
+
+- `reserve_drop_guard`
+  - 只在 `reserve` 段生效
+  - 移除 `reserve_soc`
+- `carbon_misroute`
+  - 只在 `carbon` 段生效
+  - 强制把高层权重推向 cost-heavy profile
+
+对应单测已经补到 `tests/test_preference_shift.py`。
+
+### GPU 使用
+
+- 小测试：`GPU 3`
+- 完整实验：`GPU 2`
+
+### GPU 3 sanity
+
+这轮 short sanity 跑了 4 组：
+
+- `sanity_reserve_drop_guard_none_gpu3`
+- `sanity_reserve_drop_guard_fallback_gpu3`
+- `sanity_carbon_misroute_none_gpu3`
+- `sanity_carbon_misroute_fallback_gpu3`
+
+结果确认：
+
+- `reserve_drop_guard` 在 120 步短程中命中 `30` 步
+- `carbon_misroute` 在 120 步短程中命中 `30` 步
+- fallback 版本均实现了 `30/30` 全接管
+
+这说明这两个 targeted corruption 都按设计命中了目标 regime，而不是随机扰动整个 episode。
+
+### GPU 2 完整实验
+
+完整 719 步对照跑了 4 组：
+
+- `text_best_reserve_drop_none`
+- `text_best_reserve_drop_fallback`
+- `text_best_carbon_misroute_none`
+- `text_best_carbon_misroute_fallback`
+
+所有完整实验都在 `text_best` 上运行，clean baseline 仍使用当前 best：
+
+| Run | cost | carbon | peak | ramping |
+|---|---:|---:|---:|---:|
+| clean text_best | 30.5693 | 468.3415 | 14.9948 | 858.7306 |
+| reserve_drop_none | 30.6324 | 469.5827 | 15.1640 | 859.6667 |
+| reserve_drop_fallback | 30.5752 | 468.4454 | 14.9948 | 858.7073 |
+| carbon_misroute_none | 30.6446 | 469.7692 | 15.0031 | 861.8297 |
+| carbon_misroute_fallback | 30.5818 | 468.5174 | 15.0001 | 859.8567 |
+
+补充统计：
+
+- `reserve_drop_guard` 两组都命中了 `182` 步 corruption
+- `carbon_misroute` 两组都命中了 `179` 步 corruption
+- 两个 fallback 版本都实现了全量接管
+
+### 关键结论 1：`reserve` 是当前更强的主敏感点
+
+相对 clean baseline：
+
+- `reserve_drop_none`
+  - `cost +0.0631`
+  - `carbon +1.2412`
+  - `peak +0.1692`
+  - `ramping +0.9362`
+- `carbon_misroute_none`
+  - `cost +0.0753`
+  - `carbon +1.4277`
+  - `peak +0.0083`
+  - `ramping +3.0991`
+
+这说明两者的伤害形态不同：
+
+- `reserve_drop_guard` 对 `peak` 的破坏更强，而且直接打到了当前最敏感的 `reserve` 段
+- `carbon_misroute` 对 `carbon` 和 `ramping` 影响更大，但对 `peak` 的直接伤害没有 `reserve_drop_guard` 那么强
+
+从“当前论文主结果最怕什么”这个角度看，`reserve_drop_guard` 更像第一主敏感项。
+
+### 关键结论 2：fallback 对 `reserve` 错误的修复更彻底
+
+`reserve_drop_guard` 下：
+
+- 无 fallback：
+  - `reserve_gap = 0.0822`
+  - `peak = 15.1640`
+- 有 fallback：
+  - `reserve_gap = 0.0000`
+  - `peak = 14.9948`
+
+也就是说：
+
+> heuristic fallback 基本把 `reserve_drop_guard` 带来的结构性伤害吃回去了，不只是平均 KPI 好一点，而是直接把 `reserve_gap` 从明显违规拉回到 0。
+
+这是一条比上一轮 transition-aware corruption 更强的证据。
+
+### 关键结论 3：`carbon` 是次要但真实存在的误差来源
+
+`carbon_misroute` 下：
+
+- 无 fallback：
+  - `carbon +1.4277`
+  - `ramping +3.0991`
+- 有 fallback：
+  - `carbon +0.1759`
+  - `ramping +1.1261`
+
+这说明：
+
+> `carbon` 段错路由确实会拖累系统，而且 fallback 能显著缓解，但它更像“第二层问题”，没有 `reserve` 那样直接主导 `peak` 与 reserve safety。
+
+### 这轮对 `v5` 的真实含义
+
+这轮 targeted ablation 把下一步方向收得更窄了。
+
+当前最合理的判断是：
+
+1. 如果只做一个最重要的 router 改进，应该优先解决 **reserve-aware guard / persistence**
+2. `carbon` 仍然值得修，但更像第二优先级
+3. 下一版不该泛泛追求“更强语言理解”，而应优先做：
+   - reserve-aware persistence
+   - reserve transition guard
+   - 然后再考虑 carbon expert remapping / blending
+
+所以这轮真正回答了上轮留下的问题：
+
+> 当前 `text_best` 的剩余误差不是平均分散在所有 regime 上，而是以 `reserve` 为第一敏感点、`carbon` 为第二敏感点。

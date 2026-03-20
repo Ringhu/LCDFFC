@@ -47,6 +47,10 @@ WRONG_EXPERT_BY_REGIME = {
     "reserve": "cost",
     "balanced": "cost",
 }
+TARGETED_REGIME_BY_MODE = {
+    "reserve_drop_guard": "reserve",
+    "carbon_misroute": "carbon",
+}
 
 
 def build_route_context(
@@ -128,6 +132,7 @@ def build_corrupted_strategy(
     corruption_mode: str,
 ) -> dict[str, object]:
     """Inject a structured corruption into the high-level routing output."""
+    regime_name = str(route_context.get("regime_name", "balanced"))
     if corruption_mode == "extreme_peak":
         return {
             "weights": {"cost": 0.05, "carbon": 0.05, "peak": 0.8, "smooth": 0.1},
@@ -140,8 +145,17 @@ def build_corrupted_strategy(
         }
     if corruption_mode == "invalid_missing_constraints":
         return {"weights": {"cost": 1.5}}
+    if corruption_mode == "reserve_drop_guard":
+        return {
+            "weights": {"cost": 0.65, "carbon": 0.1, "peak": 0.15, "smooth": 0.1},
+            "constraints": {"reserve_soc": None, "max_charge_rate": None},
+        }
+    if corruption_mode == "carbon_misroute":
+        return {
+            "weights": {"cost": 0.65, "carbon": 0.1, "peak": 0.15, "smooth": 0.1},
+            "constraints": {"reserve_soc": None, "max_charge_rate": None},
+        }
     if corruption_mode in {"wrong_expert", "transition_wrong_expert"}:
-        regime_name = str(route_context.get("regime_name", "balanced"))
         wrong_name = WRONG_EXPERT_BY_REGIME.get(regime_name, "cost")
         profile = PRESET_PROFILES[wrong_name]
         corrupted = {
@@ -255,6 +269,8 @@ def run_preference_shift(
             corrupted = transition_corruption_remaining > 0
             if corrupted:
                 transition_corruption_remaining -= 1
+        elif corruption_mode in TARGETED_REGIME_BY_MODE:
+            corrupted = regime.name == TARGETED_REGIME_BY_MODE[corruption_mode]
         elif corruption_every > 0 and step > 0 and step % corruption_every == 0:
             corrupted = True
         if corrupted:
@@ -324,7 +340,11 @@ def run_preference_shift(
     episode_kpis["router_type"] = router_type
     episode_kpis["forecast_mode"] = forecast_mode
     episode_kpis["fixed_regime"] = fixed_regime if router_type == "fixed" else None
-    corruption_active = corruption_every > 0 or corruption_mode == "transition_wrong_expert"
+    corruption_active = (
+        corruption_every > 0
+        or corruption_mode == "transition_wrong_expert"
+        or corruption_mode in TARGETED_REGIME_BY_MODE
+    )
     episode_kpis["corruption_every"] = corruption_every
     episode_kpis["corruption_mode"] = corruption_mode if corruption_active else None
     episode_kpis["corruption_window"] = int(corruption_window)
@@ -394,6 +414,8 @@ def main():
             "invalid_missing_constraints",
             "wrong_expert",
             "transition_wrong_expert",
+            "reserve_drop_guard",
+            "carbon_misroute",
         ],
     )
     parser.add_argument("--corruption_window", type=int, default=1)

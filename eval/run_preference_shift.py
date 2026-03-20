@@ -38,7 +38,7 @@ from llm_router.preference_routers import (
     make_router,
     resolve_regime,
 )
-from models.gru_forecaster import GRUForecaster
+from models.factory import build_forecaster
 
 WRONG_EXPERT_BY_REGIME = {
     "cost": "reserve",
@@ -114,13 +114,10 @@ def load_model_if_needed(
 
     norm_stats = np.load(norm_stats_path)
     mean, std = norm_stats["mean"], norm_stats["std"]
-    model = GRUForecaster(
+    model = build_forecaster(
+        model_cfg,
         input_dim=len(mean),
-        hidden_dim=model_cfg["hidden_dim"],
-        num_layers=model_cfg["num_layers"],
         output_dim=model_cfg["output_dim"],
-        horizon=model_cfg["horizon"],
-        dropout=0.0,
     ).to(device)
     model.load_state_dict(torch.load(checkpoint, map_location=device, weights_only=True))
     model.eval()

@@ -19,7 +19,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from controllers.qp_controller import QPController
 from data.dataset import CityLearnDataset
-from models.gru_forecaster import GRUForecaster
+from models.factory import build_forecaster
 
 
 # Observation name -> index mapping for CityLearn 2023 Phase 1 central_agent
@@ -198,13 +198,10 @@ def run_forecast_control(
         norm_stats = np.load(norm_stats_path)
         mean, std = norm_stats["mean"], norm_stats["std"]
 
-        model = GRUForecaster(
+        model = build_forecaster(
+            model_cfg,
             input_dim=len(mean),
-            hidden_dim=model_cfg["hidden_dim"],
-            num_layers=model_cfg["num_layers"],
             output_dim=model_cfg["output_dim"],
-            horizon=horizon,
-            dropout=0.0,
         ).to(device)
         model.load_state_dict(torch.load(checkpoint, map_location=device, weights_only=True))
         model.eval()

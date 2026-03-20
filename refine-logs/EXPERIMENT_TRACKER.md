@@ -17,3 +17,4 @@
 | R013 | M4+ | targeted ablation | `reserve_drop_guard` vs `carbon_misroute` | shifted | KPI delta / reserve gap / fallback gain | MUST | DONE | 已完成 GPU3 sanity 与 GPU2 全量对照；当前证据显示 `reserve` 是更强的主敏感点，`carbon` 是次要但真实存在的误差来源 |
 | R014 | M2+ | reviewed v5/v6 | reserve-aware release guard | test | regime regret | MUST | DONE | `v5` 改进方向正确但 guard 过宽，整体劣于 `v4`；`v6` 收窄后与 `v4` 完全打平，因此当前 `text_best` 仍保持为 `v4` |
 | R015 | M2+ | reviewed v7 | regime-aware transition trigger | test | regime regret | MUST | DONE | `v7` 通过按下一段 regime 区分 release guard，但最终与 `v4 / v6` 仍完全打平；说明局部 reserve release guard 调优已进入饱和区，当前 best 仍是 `v4` |
+| R016 | M1+ | stronger baseline | `GRU` vs `TSMixer` + downstream control check | test | forecast metrics / cost / carbon / peak | MUST | DONE | 已完成 reviewed stronger-forecast-baseline 实验；`TSMixer` 未优于 `GRU`，且在 `TSMixer` 下 `text_v4` 不再优于最佳单一固定控制器，说明当前高层结论对 low-level backbone 仍敏感 |

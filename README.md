@@ -4,7 +4,7 @@
 
 本项目面向 **CityLearn Challenge 2023**，目标是实现一个最小可行的 **forecast-then-control** 闭环系统：
 
-1. 用历史观测训练 GRU 预测器。
+1. 用历史观测训练 forecasting backbone（当前已接入 `GRU / TSMixer / PatchTST`）。
 2. 用固定权重 QP 控制器生成电池动作。
 3. 在 `central_agent=True`、battery-only 设定下与 `RBC` 基线对比。
 
@@ -17,7 +17,7 @@
 
 - `data/prepare_citylearn.py`：从 CityLearn 提取原始时序并生成 `forecast_data.npz`
 - `data/dataset.py`：滑动窗口数据集与标准化统计
-- `scripts/train_gru.py`：GRU 训练入口
+- `scripts/train_forecaster.py`：统一 forecasting backbone 训练入口（支持 `GRU / TSMixer / PatchTST`）
 - `controllers/qp_controller.py`：固定权重 QP 控制器
 - `controllers/safe_fallback.py`：零动作回退
 - `eval/run_rbc.py`：基线评估
@@ -29,7 +29,7 @@
 
 - `SPO+` 训练路径
 - uncertainty ensemble 与 uncertainty-aware gating
-- 真正可用的 `LLMRouter.route()`
+- agent 级或带 deterministic fallback 的 LLM router 仍未闭环
 - deterministic LLM fallback
 - RL baseline 与 OOD 评估
 
@@ -47,7 +47,7 @@ CityLearn observation -> GRU forecaster -> QP controller -> CityLearn env
 forecast + QP -> uncertainty-aware fallback -> decision-focused learning -> LLM router
 ```
 
-其中 LLM 的角色被限定为高层偏好/约束路由器，不直接输出底层连续动作。
+其中 LLM 的角色被限定为高层偏好/约束路由器，不直接输出底层连续动作；当前仓库已实现最小 prompt-only `LLMRouter.route()`，但尚未做 agent 化扩展，也尚未补 deterministic fallback。
 
 ## 技术栈
 
@@ -130,7 +130,7 @@ LCDFFC/
 ├── data/                     # 数据提取与数据集
 ├── docs/                     # 规格说明、汇报和辅助文档
 ├── eval/                     # 基线、端到端评估、结果聚合
-├── llm_router/               # Prompt、schema、router 骨架
+├── llm_router/               # Prompt、schema、最小 prompt-only router
 ├── models/                   # 预测模型
 ├── scripts/                  # 训练与辅助脚本
 ├── tests/                    # 测试

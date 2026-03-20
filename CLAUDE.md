@@ -75,7 +75,7 @@ class LLMRouter:
 Notes:
 
 - `QPController` is implemented and used by `eval/run_controller.py`.
-- `LLMRouter.route()` is not implemented yet and must not be documented elsewhere as an available runtime feature.
+- `LLMRouter.route()` now has a minimal prompt-only implementation; do not describe it as an agent system or a robust production-ready router yet.
 - A deterministic fallback is required before the LLM router can be considered usable.
 
 ### Config
@@ -101,7 +101,7 @@ Notes:
 2. **Sprint 1**: Data pipeline + GRU forecaster — largely done
 3. **Sprint 2**: QP controller + RBC baseline + end-to-end eval — code mostly done, acceptance not passed
 4. **Sprint 3**: SPO+ decision-focused loss integration — not started
-5. **Sprint 4**: LLM router — prompt/schema skeleton only
+5. **Sprint 4**: LLM router — minimal prompt-only version implemented, but deterministic fallback / agentization not done
 6. **Sprint 5**: Ablation and paper writing — not started
 
 ## Important Notes

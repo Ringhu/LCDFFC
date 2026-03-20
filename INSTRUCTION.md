@@ -117,7 +117,7 @@
 4. 实现 `scripts/generate_instruction_data.py`：生成合成 instruction 数据
 
 **LLM 选择**：
-- 第一版：prompt-only，使用本地 Qwen2.5-7B-Instruct（通过 vLLM 部署）
+- 第一版：prompt-only，当前已实现为本地 `Qwen2.5-0.5B-Instruct + transformers` 的最小可运行版本
 - 后续：可基于合成数据做 LoRA 微调
 
 **止损点**：
@@ -127,7 +127,7 @@
 **当前状态补充**：
 
 - `prompt_templates.py`、`json_schema.py`、`generate_instruction_data.py` 已有
-- `LLMRouter.route()` 尚未实现
+- `LLMRouter.route()` 已实现最小 prompt-only 版本，并已在 event-driven 协议下跑通完整实验
 - deterministic fallback 尚未补齐
 
 ---

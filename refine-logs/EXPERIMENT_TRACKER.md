@@ -18,3 +18,7 @@
 | R014 | M2+ | reviewed v5/v6 | reserve-aware release guard | test | regime regret | MUST | DONE | `v5` 改进方向正确但 guard 过宽，整体劣于 `v4`；`v6` 收窄后与 `v4` 完全打平，因此当前 `text_best` 仍保持为 `v4` |
 | R015 | M2+ | reviewed v7 | regime-aware transition trigger | test | regime regret | MUST | DONE | `v7` 通过按下一段 regime 区分 release guard，但最终与 `v4 / v6` 仍完全打平；说明局部 reserve release guard 调优已进入饱和区，当前 best 仍是 `v4` |
 | R016 | M1+ | stronger baseline | `GRU` vs `TSMixer` + downstream control check | test | forecast metrics / cost / carbon / peak | MUST | DONE | 已完成 reviewed stronger-forecast-baseline 实验；`TSMixer` 未优于 `GRU`，且在 `TSMixer` 下 `text_v4` 不再优于最佳单一固定控制器，说明当前高层结论对 low-level backbone 仍敏感 |
+
+| R017 | M1+ | stronger baseline | `GRU` vs `TSMixer` vs `PatchTST` + downstream control check | test | forecast metrics / cost / carbon / peak | MUST | DONE | 已完成 reviewed `PatchTST` stronger baseline；`PatchTST` 的 forecasting 指标最差，但 `PatchTST + QP` 在 `cost / carbon` 上优于 `GRU + QP`，说明 forecasting 误差与控制表现并不严格同向 |
+| R018 | M0+ | protocol upgrade | event-driven preference protocol | test | regime regret / protocol robustness | MUST | DONE | 已完成 reviewed event-driven 协议与完整对比；在新协议下 `fixed_peak` 成为最佳单一固定策略，`text_best / heuristic` 都不再占优，说明旧四段协议偏乐观 |
+| R019 | M2++ | real LLM router | prompt-only `LLMRouter.route()` | test | validity / latency / regime regret | MUST | DONE | 已实现并跑通本地 Qwen prompt-only router；完整 event-driven 结果优于 `text_best / heuristic`，但仍略弱于 `fixed_peak`；`48` 次调用、`0` 次 parse failure、`0` 次 fallback |

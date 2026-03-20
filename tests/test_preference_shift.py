@@ -7,11 +7,45 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from eval.preference_protocols import build_event_driven_preference_schedule
 from eval.run_preference_shift import build_corrupted_strategy
 from eval.analyze_preference_shift_gap import summarize_routes
 from eval.preference_shift_metrics import compute_episode_kpis, compute_preference_score, compute_segment_metrics
 from llm_router.preference_routers import build_default_preference_schedule, make_router, resolve_regime
 
+
+
+
+def test_event_driven_schedule_covers_all_steps_and_detects_events():
+    total_steps = 60
+    signal_table = {
+        "electricity_pricing": np.concatenate([np.full(8, 0.02), np.full(12, 0.08), np.full(40, 0.02)]).astype(np.float32),
+        "carbon_intensity": np.concatenate([np.full(28, 0.35), np.full(12, 0.65), np.full(20, 0.35)]).astype(np.float32),
+        "non_shiftable_load_avg": np.concatenate([np.full(44, 0.5), np.full(16, 2.0)]).astype(np.float32),
+        "net_electricity_consumption_avg": np.concatenate([np.full(44, 0.4), np.full(16, 2.1)]).astype(np.float32),
+        "_num_steps": np.array([total_steps], dtype=np.int32),
+    }
+    schedule = build_event_driven_preference_schedule(signal_table, total_steps=total_steps, min_segment_len=6)
+    assert schedule[0].start_step == 0
+    assert schedule[-1].end_step == total_steps
+    names = {seg.name for seg in schedule}
+    assert "cost" in names
+    assert "peak" in names or "carbon" in names
+    lengths = {seg.end_step - seg.start_step for seg in schedule}
+    assert len(lengths) >= 2
+
+
+def test_event_driven_schedule_enforces_min_segment_len():
+    total_steps = 36
+    signal_table = {
+        "electricity_pricing": np.concatenate([np.full(10, 0.02), np.full(2, 0.10), np.full(24, 0.02)]).astype(np.float32),
+        "carbon_intensity": np.full(total_steps, 0.35, dtype=np.float32),
+        "non_shiftable_load_avg": np.full(total_steps, 0.4, dtype=np.float32),
+        "net_electricity_consumption_avg": np.full(total_steps, 0.3, dtype=np.float32),
+        "_num_steps": np.array([total_steps], dtype=np.int32),
+    }
+    schedule = build_event_driven_preference_schedule(signal_table, total_steps=total_steps, min_segment_len=6)
+    assert all((seg.end_step - seg.start_step) >= 6 for seg in schedule)
 
 def test_default_schedule_covers_all_steps():
     schedule = build_default_preference_schedule(100)

@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from controllers.qp_controller import QPController
 from eval.preference_shift_metrics import compute_episode_kpis, compute_segment_metrics
+from eval.preference_protocols import build_event_driven_preference_schedule, load_signal_table
 from eval.run_controller import (
     TARGET_COLS,
     build_myopic_forecast,
@@ -38,6 +39,7 @@ from llm_router.preference_routers import (
     make_router,
     resolve_regime,
 )
+from llm_router.router import LLMRouter
 from models.factory import build_forecaster
 
 WRONG_EXPERT_BY_REGIME = {
@@ -124,6 +126,31 @@ def load_model_if_needed(
     return model, mean, std
 
 
+
+
+def build_experiment_router(
+    router_type: str,
+    fixed_regime: str,
+    llm_router_config_path: str,
+    device: str,
+):
+    """Construct either a rule-based router or the prompt-only LLM router."""
+    if router_type != "llm_prompt_v1":
+        return make_router(router_type, fixed_regime=fixed_regime)
+
+    with open(llm_router_config_path) as f:
+        llm_cfg = yaml.safe_load(f)
+    model_cfg = llm_cfg.get("model", {})
+    cache_by_instruction = llm_cfg.get("call_frequency", "per_segment") != "per_step"
+    return LLMRouter(
+        model_name=model_cfg.get("name", "Qwen/Qwen2.5-0.5B-Instruct"),
+        backend=model_cfg.get("backend", "transformers"),
+        temperature=float(model_cfg.get("temperature", 0.0)),
+        max_tokens=int(model_cfg.get("max_tokens", 192)),
+        device=device,
+        cache_by_instruction=cache_by_instruction,
+    )
+
 def build_corrupted_strategy(
     route_context: dict[str, object],
     corruption_mode: str,
@@ -182,10 +209,18 @@ def run_preference_shift(
     oracle_data_path: str,
     device: str,
     max_steps: int | None = None,
+    schedule_type: str = "default",
+    schedule_data_path: str = "artifacts/forecast_data.npz",
+    event_short_window: int = 6,
+    event_reserve_window: int = 12,
+    event_quantile: float = 0.75,
+    event_reserve_quantile: float = 0.8,
+    event_min_segment_len: int = 12,
     corruption_every: int = 0,
     corruption_mode: str = "extreme_peak",
     corruption_window: int = 1,
     route_fallback: str = "none",
+    llm_router_config_path: str = "configs/llm_router.yaml",
 ) -> dict[str, object]:
     """Run one preference-shift experiment."""
     from citylearn.citylearn import CityLearnEnv
@@ -225,8 +260,20 @@ def run_preference_shift(
     planned_total_steps = env.time_steps - 1
     if max_steps is not None:
         planned_total_steps = min(planned_total_steps, int(max_steps))
-    schedule = build_default_preference_schedule(planned_total_steps)
-    router = make_router(router_type, fixed_regime=fixed_regime)
+    if schedule_type == "event_driven":
+        signal_table = load_signal_table(schedule_data_path, total_steps=planned_total_steps)
+        schedule = build_event_driven_preference_schedule(
+            signal_table,
+            total_steps=planned_total_steps,
+            short_window=event_short_window,
+            reserve_window=event_reserve_window,
+            quantile=event_quantile,
+            reserve_quantile=event_reserve_quantile,
+            min_segment_len=event_min_segment_len,
+        )
+    else:
+        schedule = build_default_preference_schedule(planned_total_steps)
+    router = build_experiment_router(router_type, fixed_regime, llm_router_config_path, resolved_device)
     fallback_router = HeuristicPreferenceRouter() if route_fallback == "heuristic" else None
 
     terminated = False
@@ -337,6 +384,7 @@ def run_preference_shift(
     episode_kpis["router_type"] = router_type
     episode_kpis["forecast_mode"] = forecast_mode
     episode_kpis["fixed_regime"] = fixed_regime if router_type == "fixed" else None
+    episode_kpis["schedule_type"] = schedule_type
     corruption_active = (
         corruption_every > 0
         or corruption_mode == "transition_wrong_expert"
@@ -346,6 +394,8 @@ def run_preference_shift(
     episode_kpis["corruption_mode"] = corruption_mode if corruption_active else None
     episode_kpis["corruption_window"] = int(corruption_window)
     episode_kpis["route_fallback"] = route_fallback
+    if hasattr(router, "get_stats"):
+        episode_kpis["router_stats"] = router.get_stats()
 
     segment_summaries = []
     for regime in schedule:
@@ -392,7 +442,7 @@ def main():
     parser.add_argument("--tag", type=str, default="preference_shift")
     parser.add_argument(
         "--router_type",
-        choices=["fixed", "heuristic", "numeric", "text", "text_v2", "text_v3", "text_v4", "text_v5", "text_v6", "text_v7", "text_best"],
+        choices=["fixed", "heuristic", "numeric", "text", "text_v2", "text_v3", "text_v4", "text_v5", "text_v6", "text_v7", "text_best", "llm_prompt_v1"],
         default="heuristic",
     )
     parser.add_argument("--fixed_regime", choices=["balanced", "cost", "carbon", "peak", "reserve"], default="balanced")
@@ -400,6 +450,13 @@ def main():
     parser.add_argument("--oracle_data", type=str, default="artifacts/forecast_data.npz")
     parser.add_argument("--device", type=str, default="cpu")
     parser.add_argument("--max_steps", type=int, default=None)
+    parser.add_argument("--schedule_type", choices=["default", "event_driven"], default="default")
+    parser.add_argument("--schedule_data", type=str, default="artifacts/forecast_data.npz")
+    parser.add_argument("--event_short_window", type=int, default=6)
+    parser.add_argument("--event_reserve_window", type=int, default=12)
+    parser.add_argument("--event_quantile", type=float, default=0.75)
+    parser.add_argument("--event_reserve_quantile", type=float, default=0.8)
+    parser.add_argument("--event_min_segment_len", type=int, default=12)
     parser.add_argument("--corruption_every", type=int, default=0)
     parser.add_argument(
         "--corruption_mode",
@@ -422,6 +479,7 @@ def main():
         default="none",
         choices=["none", "schema", "heuristic"],
     )
+    parser.add_argument("--llm_router_config", type=str, default="configs/llm_router.yaml")
     args = parser.parse_args()
 
     with open(args.forecast_config) as f:
@@ -443,10 +501,18 @@ def main():
         oracle_data_path=args.oracle_data,
         device=args.device,
         max_steps=args.max_steps,
+        schedule_type=args.schedule_type,
+        schedule_data_path=args.schedule_data,
+        event_short_window=args.event_short_window,
+        event_reserve_window=args.event_reserve_window,
+        event_quantile=args.event_quantile,
+        event_reserve_quantile=args.event_reserve_quantile,
+        event_min_segment_len=args.event_min_segment_len,
         corruption_every=args.corruption_every,
         corruption_mode=args.corruption_mode,
         corruption_window=args.corruption_window,
         route_fallback=args.route_fallback,
+        llm_router_config_path=args.llm_router_config,
     )
 
 

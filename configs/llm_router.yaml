@@ -1,11 +1,11 @@
 # LLM router configuration
 model:
-  name: "Qwen/Qwen2.5-7B-Instruct"
-  backend: "vllm"  # "vllm" or "transformers"
-  temperature: 0.1
-  max_tokens: 256
+  name: "Qwen/Qwen2.5-0.5B-Instruct"
+  backend: "transformers"
+  temperature: 0.0
+  max_tokens: 192
 
-call_frequency: "per_step"  # "per_step" or "per_hour"
+call_frequency: "per_segment"
 
 lora:
   enabled: false

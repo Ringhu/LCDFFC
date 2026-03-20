@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from models.gru_forecaster import GRUForecaster
+from models.patchtst_forecaster import PatchTSTForecaster
 from models.tsmixer_forecaster import TSMixerForecaster
 
 
@@ -30,6 +31,21 @@ def build_forecaster(model_cfg: dict, input_dim: int, output_dim: int):
             ff_dim=model_cfg.get("ff_dim", 128),
             output_dim=output_dim,
             horizon=horizon,
+            dropout=model_cfg.get("dropout", 0.1),
+        )
+
+    if model_type == "patchtst":
+        return PatchTSTForecaster(
+            input_dim=input_dim,
+            history_len=history_len,
+            output_dim=output_dim,
+            horizon=horizon,
+            patch_length=model_cfg.get("patch_length", 4),
+            patch_stride=model_cfg.get("patch_stride", 4),
+            d_model=model_cfg.get("d_model", 64),
+            num_layers=model_cfg.get("num_layers", 3),
+            num_heads=model_cfg.get("num_heads", 4),
+            ff_dim=model_cfg.get("ff_dim", 128),
             dropout=model_cfg.get("dropout", 0.1),
         )
 

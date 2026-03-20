@@ -1,6 +1,9 @@
 """JSON schema definition and validation for LLM router output."""
 
+from __future__ import annotations
+
 import json
+import re
 
 ROUTER_OUTPUT_SCHEMA = {
     "type": "object",
@@ -33,16 +36,7 @@ DEFAULT_OUTPUT = {
 
 
 def validate_router_output(output: dict) -> dict:
-    """Validate and sanitize LLM router output.
-
-    Falls back to defaults for missing or invalid fields.
-
-    Args:
-        output: Parsed JSON dict from LLM.
-
-    Returns:
-        Validated output dict.
-    """
+    """Validate and sanitize router output."""
     result = {"weights": {}, "constraints": {}}
 
     weights = output.get("weights", {})
@@ -65,20 +59,15 @@ def validate_router_output(output: dict) -> dict:
 
 
 def parse_llm_json(text: str) -> dict:
-    """Extract and parse JSON from LLM text output.
-
-    Handles cases where JSON is wrapped in markdown code blocks.
-
-    Args:
-        text: Raw LLM output string.
-
-    Returns:
-        Parsed and validated dict.
-    """
+    """Extract and parse JSON from LLM text output."""
     text = text.strip()
     if text.startswith("```"):
         lines = text.split("\n")
-        text = "\n".join(lines[1:-1])
+        text = "\n".join(lines[1:-1]).strip()
+
+    match = re.search(r"\{.*\}", text, flags=re.S)
+    if match is not None:
+        text = match.group(0)
 
     parsed = json.loads(text)
     return validate_router_output(parsed)

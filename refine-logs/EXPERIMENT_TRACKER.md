@@ -16,3 +16,4 @@
 | R012 | M2+ | 误差归因 | `text_best` segment-level gap analysis | test | per-regime delta / route stats | MUST | DONE | 已新增 `eval/analyze_preference_shift_gap.py`；当前结论是 `text_best` 相对 `v2` 的主要优势来自 `cost / carbon / peak` 三段，而剩余短板主要落在 `reserve` 与部分 `carbon` 区段 |
 | R013 | M4+ | targeted ablation | `reserve_drop_guard` vs `carbon_misroute` | shifted | KPI delta / reserve gap / fallback gain | MUST | DONE | 已完成 GPU3 sanity 与 GPU2 全量对照；当前证据显示 `reserve` 是更强的主敏感点，`carbon` 是次要但真实存在的误差来源 |
 | R014 | M2+ | reviewed v5/v6 | reserve-aware release guard | test | regime regret | MUST | DONE | `v5` 改进方向正确但 guard 过宽，整体劣于 `v4`；`v6` 收窄后与 `v4` 完全打平，因此当前 `text_best` 仍保持为 `v4` |
+| R015 | M2+ | reviewed v7 | regime-aware transition trigger | test | regime regret | MUST | DONE | `v7` 通过按下一段 regime 区分 release guard，但最终与 `v4 / v6` 仍完全打平；说明局部 reserve release guard 调优已进入饱和区，当前 best 仍是 `v4` |

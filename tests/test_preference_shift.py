@@ -163,6 +163,67 @@ def test_text_v6_only_keeps_narrow_release_guard_when_soc_is_low():
     assert released["constraints"]["reserve_soc"] in (None, 0.0)
 
 
+def test_text_v7_keeps_cost_segment_guard_narrow_after_reserve():
+    router = make_router("text_v7")
+    v4_router = make_router("text_v4")
+    reserve_context = {
+        "regime_name": "reserve",
+        "instruction": "Resilience is the main priority. Keep meaningful battery reserve for future risk and avoid aggressive depletion.",
+        "price": 0.03,
+        "carbon_intensity": 0.40,
+        "grid_stress": "medium",
+        "load_peak_forecast": 0.9,
+        "soc_avg": 0.34,
+        "price_trend": "stable",
+    }
+    cost_context = {
+        "regime_name": "cost",
+        "instruction": "Electricity price is the main priority. Reduce operating cost first, but keep the controller stable.",
+        "price": 0.045,
+        "carbon_intensity": 0.41,
+        "grid_stress": "medium",
+        "load_peak_forecast": 0.8,
+        "soc_avg": 0.32,
+        "price_trend": "rising",
+    }
+    router.route(reserve_context)
+    guarded = router.route(cost_context)
+    baseline = v4_router.route(cost_context)
+    assert guarded["constraints"]["reserve_soc"] is not None
+    assert guarded["constraints"]["reserve_soc"] >= 0.2
+    for key in guarded["weights"]:
+        assert np.isclose(guarded["weights"][key], baseline["weights"][key])
+
+
+def test_text_v7_allows_small_reserve_blend_in_carbon_after_reserve():
+    router = make_router("text_v7")
+    reserve_context = {
+        "regime_name": "reserve",
+        "instruction": "Resilience is the main priority. Keep meaningful battery reserve for future risk and avoid aggressive depletion.",
+        "price": 0.03,
+        "carbon_intensity": 0.40,
+        "grid_stress": "medium",
+        "load_peak_forecast": 0.9,
+        "soc_avg": 0.34,
+        "price_trend": "stable",
+    }
+    carbon_context = {
+        "regime_name": "carbon",
+        "instruction": "Carbon reduction is the main priority. Prefer lower-emission operation even if cost is not minimal.",
+        "price": 0.03,
+        "carbon_intensity": 0.52,
+        "grid_stress": "medium",
+        "load_peak_forecast": 0.8,
+        "soc_avg": 0.32,
+        "price_trend": "stable",
+    }
+    router.route(reserve_context)
+    guarded = router.route(carbon_context)
+    assert guarded["constraints"]["reserve_soc"] is not None
+    assert guarded["constraints"]["reserve_soc"] >= 0.2
+    assert guarded["weights"]["peak"] > 0.375
+
+
 def test_wrong_expert_corruption_drops_reserve_guard_in_reserve_regime():
     strategy = build_corrupted_strategy(
         {

@@ -802,3 +802,94 @@ sanity 结果确认了：
 也就是说，后续如果还有 `v7`，它不该只是继续改一个固定窗口，而应当回答：
 
 > 到底在什么条件下，才应该从 reserve 模式真正释放出来，而不是靠一个静态步数窗口硬控。
+
+## reviewed `v7`：regime-aware transition trigger
+
+在 `v5 / v6` 之后，又做了一轮新的 reviewed 改动：
+
+- `refine-logs/auto-review/2026-03-20-v7-next-step.md`
+
+这轮 review 的结论是：
+
+> 不能再只调一个更大或更小的固定窗口，而要让 reserve release 逻辑显式区分“下一个 regime 是谁”。
+
+因此 `text_v7` 的设计是：
+
+- 离开 `reserve` 后：
+  - 如果进入 `cost` 段，只保留 reserve floor，不额外混 reserve 权重
+  - 如果进入 `carbon / peak` 段，才允许小幅 reserve-aware blending
+
+也就是说，`v7` 不是再做一个静态 release guard，而是一次 **regime-aware transition trigger** 尝试。
+
+### 本地与 GPU 验证
+
+- 本地单测已通过
+- `GPU 3` sanity 已通过
+- `GPU 2` clean protocol 完整评测已完成
+
+### `v7` 结果
+
+完整 GPU2 结果：
+
+| Run | avg_preference_score | avg_regret_to_best_fixed | avg_regret_to_best_single_fixed |
+|---|---:|---:|---:|
+| text_router_v4 | 0.876622 | 0.000914 | -0.000309 |
+| text_router_v6 | 0.876622 | 0.000914 | -0.000309 |
+| text_router_v7 | 0.876622 | 0.000914 | -0.000309 |
+
+进一步的 gap analysis 也显示：
+
+- `v7` 相对 `v4` 的四段 delta 全部为 `0.0`
+- `v7` 的 route stats 与 `v4 / v6` 一致
+
+因此，这轮最准确的结论不是“`v7` 失败”，而是：
+
+> `v7` 证明了 regime-aware transition trigger 这种局部修补方向，在当前 clean preference-shift 协议上已经进入饱和区。它没有把系统变坏，但也没有带来超过 `v4` 的任何额外增益。
+
+### 这对整体研究状态的含义
+
+到这一轮为止，当前实验状态已经比较清楚了。
+
+#### 已经可以认为“够了”的部分
+
+1. **主结果已经成立**
+   - `text_v4` 稳定优于最佳单一固定控制器
+   - 这说明“语言条件化高层路由优于单一固定权重”已经有实证支撑
+
+2. **失败模式已经被拆清楚**
+   - `reserve` 是第一主敏感点
+   - `carbon` 是第二主敏感点
+
+3. **fallback 的作用已经被证明**
+   - 在 transition-aware corruption 和 targeted ablation 下都出现了可解释的保护模式
+
+4. **局部 reserve release guard 调优已经摸到边界**
+   - `v5` 过宽会伤到 `cost`
+   - `v6` 过窄会退化成 `v4`
+   - `v7` 做了 regime-aware trigger，也仍然和 `v4` 打平
+
+#### 仍然需要改进的部分
+
+1. **还没有追平 regime-wise best fixed 上界**
+   - 当前 best `v4` 仍有 `avg_regret_to_best_fixed = 0.000914`
+
+2. **局部 router tweak 已经不再产生增益**
+   - 继续手工细调 release guard，很可能只是在做低收益搜索
+
+3. **论文下一步需要从“继续局部打磨 router”切到“更高层的验证”**
+   - 例如更真实的 protocol
+   - 或者更高层次的 review / narrative 固化
+
+### 当前阶段总结
+
+一句话总结就是：
+
+> 现在不是“router 还没做出来”，而是“当前 best router 已经做出来了，局部微调也试过了，接下来该从局部调参切到更高层次的验证与收敛”。
+
+因此，当前最合理的下一步不再是立刻做 `v8`，而是：
+
+1. 锁定 `text_v4` 为当前 best
+2. 把当前实验故事整理成 paper-facing 主结果、误差分析和安全性分析
+3. 再决定是进入：
+   - `OOD / transfer`
+   - 还是一轮更高层的 auto-review / paper-facing review

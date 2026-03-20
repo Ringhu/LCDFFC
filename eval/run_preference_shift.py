@@ -395,7 +395,7 @@ def main():
     parser.add_argument("--tag", type=str, default="preference_shift")
     parser.add_argument(
         "--router_type",
-        choices=["fixed", "heuristic", "numeric", "text", "text_v2", "text_v3", "text_v4", "text_v5", "text_v6", "text_best"],
+        choices=["fixed", "heuristic", "numeric", "text", "text_v2", "text_v3", "text_v4", "text_v5", "text_v6", "text_v7", "text_best"],
         default="heuristic",
     )
     parser.add_argument("--fixed_regime", choices=["balanced", "cost", "carbon", "peak", "reserve"], default="balanced")

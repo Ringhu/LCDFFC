@@ -643,6 +643,76 @@ class TextExpertSelectorRouterV6(TextExpertSelectorRouterV4):
         return validate_router_output(guarded)
 
 
+class TextExpertSelectorRouterV7(TextExpertSelectorRouterV4):
+    """Regime-aware reserve release guard selected after reviewing v5/v6.
+
+    V5 hurt the cost segment by spreading reserve protection too broadly. V6
+    narrowed the guard so much that it became equivalent to v4. V7 keeps a
+    short reserve release window, but varies the guard by the next regime:
+    cost only gets a reserve floor, while carbon/peak get a small reserve blend.
+    """
+
+    def __init__(self, reserve_transition_steps: int = 8, release_soc_threshold: float = 0.36):
+        self.reserve_transition_steps = max(int(reserve_transition_steps), 0)
+        self.release_soc_threshold = float(release_soc_threshold)
+        self._reserve_guard_remaining = 0
+        self._last_regime_name: str | None = None
+
+    def _apply_regime_aware_guard(self, result: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+        regime_name = str(context.get("regime_name", "balanced"))
+        soc = float(context.get("soc_avg", 0.5))
+        grid_stress = str(context.get("grid_stress", "low"))
+
+        if regime_name == "reserve":
+            self._reserve_guard_remaining = self.reserve_transition_steps
+        elif self._last_regime_name == "reserve" and soc < self.release_soc_threshold:
+            self._reserve_guard_remaining = max(self._reserve_guard_remaining, self.reserve_transition_steps)
+
+        guarded = {
+            "weights": dict(result["weights"]),
+            "constraints": dict(result["constraints"]),
+        }
+
+        guard_active = (
+            regime_name != "reserve"
+            and self._reserve_guard_remaining > 0
+            and soc < self.release_soc_threshold
+        )
+        if guard_active:
+            reserve_floor = 0.2
+            if soc < 0.3 or grid_stress in {"high", "critical"}:
+                reserve_floor = 0.25
+
+            guarded["constraints"]["reserve_soc"] = max(
+                guarded["constraints"].get("reserve_soc") or 0.0,
+                reserve_floor,
+            )
+
+            if regime_name in {"carbon", "peak"}:
+                reserve_profile = PRESET_PROFILES["reserve"]
+                decay = self._reserve_guard_remaining / max(self.reserve_transition_steps, 1)
+                alpha = 0.06 + 0.06 * decay
+                guarded["weights"] = {
+                    key: (1 - alpha) * guarded["weights"][key] + alpha * reserve_profile["weights"][key]
+                    for key in guarded["weights"]
+                }
+
+            self._reserve_guard_remaining -= 1
+        elif regime_name != "reserve" and soc >= self.release_soc_threshold:
+            self._reserve_guard_remaining = 0
+
+        self._last_regime_name = regime_name
+        return guarded
+
+    def route(self, context: dict[str, Any]) -> dict[str, Any]:
+        base = super().route(context)
+        guarded = self._apply_regime_aware_guard(base, context)
+        weights = guarded["weights"]
+        normalized = _normalize_primary(weights["cost"], weights["carbon"], weights["peak"])
+        guarded["weights"].update(normalized)
+        return validate_router_output(guarded)
+
+
 def make_router(router_type: str, fixed_regime: str = "balanced"):
     """Factory for experiment routers."""
     router_type = router_type.lower()
@@ -666,4 +736,6 @@ def make_router(router_type: str, fixed_regime: str = "balanced"):
         return TextExpertSelectorRouterV5()
     if router_type == "text_v6":
         return TextExpertSelectorRouterV6()
+    if router_type == "text_v7":
+        return TextExpertSelectorRouterV7()
     raise ValueError(f"Unsupported router_type: {router_type}")

@@ -13,6 +13,7 @@ from typing import Any
 from llm_router.json_schema import validate_router_output
 
 SMOOTH_FLOOR = 0.1
+CURRENT_BEST_TEXT_ROUTER = "text_v4"
 
 PRESET_PROFILES = {
     "balanced": {
@@ -507,6 +508,8 @@ class TextExpertSelectorRouterV4:
 def make_router(router_type: str, fixed_regime: str = "balanced"):
     """Factory for experiment routers."""
     router_type = router_type.lower()
+    if router_type == "text_best":
+        router_type = CURRENT_BEST_TEXT_ROUTER
     if router_type == "fixed":
         return FixedPreferenceRouter(fixed_regime)
     if router_type == "heuristic":

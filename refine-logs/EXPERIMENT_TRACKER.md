@@ -12,4 +12,4 @@
 | R008 | M3 | ablation | 无 router（固定权重） | test | regime regret | MUST | DONE | 由 `fixed_balanced` 和其他固定权重变体共同覆盖 |
 | R009 | M4 | 鲁棒性 | text router + deterministic fallback | shifted | validity / KPI | MUST | DONE | 已在 `text_v2` 上完成高频 corruption（every 12 steps）对照；当前 corruption 模式下有/无 fallback 差异很小，说明这一设定下 M4 结论仍偏弱 |
 | R010 | M5 | 扩展 | 最佳 router 在 OOD weather/price 下 | shifted | degradation | NICE | TODO | 仅在主结果成立后运行 |
-| R011 | M2+ | review-selected 改进 | text expert-selector router (`text_v4`) | test | regime regret | MUST | DONE | 基于 auto-review 选择的下一版；在完整 GPU2 运行中优于 `text_v2`，并进一步降低了对 regime-wise best fixed 的 regret |
+| R011 | M2+ | review-selected 改进 | text expert-selector router (`text_v4`) | test | regime regret | MUST | DONE | 基于 auto-review 选择的下一版；当前是已验证的最佳文本路由版本，并新增 `text_best` 别名固定这一状态 |

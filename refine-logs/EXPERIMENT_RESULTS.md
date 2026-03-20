@@ -277,3 +277,107 @@ CUDA_VISIBLE_DEVICES=3 python eval/run_preference_shift.py \
 2. 继续分析 `text_router_v4` 与 regime-wise best fixed 上界之间的剩余差距
 3. 对 `preference-shift` 协议做更真实的 regime 设计，减少过于人工的切换
 4. 重做 `M4` 的 corruption protocol，使其更贴近真实高层路由失效
+
+## `text_router_v4` 是否已经是最好
+
+这次专门把“最好”拆成两个层次来判断：
+
+1. **它是否是当前已经验证过的文本路由里最强的版本**
+2. **它是否已经可以被宣称为全局最优或没有进一步改进空间**
+
+结论是：
+
+> `text_router_v4` 已经可以固定为 **当前已验证的最佳文本路由版本**，但还**不能**宣称它已经是“做到头了”的全局最优。
+
+### 为什么可以固定为当前 best
+
+在同一套 `GPU2`、同一条 `preference-shift` 协议、同一评分脚本下，`v4` 同时满足：
+
+| Run | avg_preference_score | avg_regret_to_best_fixed | avg_regret_to_best_single_fixed |
+|---|---:|---:|---:|
+| text_router_v2 | 0.876864 | 0.001157 | -0.000067 |
+| text_router_v3 | 0.878693 | 0.002986 | 0.001762 |
+| text_router_v4 | 0.876622 | 0.000914 | -0.000309 |
+
+这意味着：
+
+- 在当前已测试的文本路由候选中，`v4` 的 `avg_preference_score` 最低
+- `v4` 对 regime-wise best fixed 上界的平均 regret 也最低
+- `v4` 继续优于最佳单一固定控制器 `fixed_reserve`
+
+更细一层看，`v4` 相对 `v2` 的优势不是只体现在单一平均数上：
+
+- `cost` 段：`v4` 更好
+- `carbon` 段：`v4` 更好
+- `peak` 段：`v4` 略好
+- `reserve` 段：`v2` 仍略好
+
+因此，`v4` 不是“四段全胜”，但它在当前汇总目标下给出了最好的整体折中。
+
+### 为什么不能把它说成全局最优
+
+如果要说“已经做到最好”，至少需要满足下面两件事之一：
+
+1. 它已经打平或逼近到几乎没有差距的可达上界
+2. 在更强的后续搜索里，没有再找到更好的合理变体
+
+当前两条都不成立。
+
+第一，`v4` 仍然没有追平当前协议下的 regime-wise best fixed 上界：
+
+- `text_router_v4`: `avg_regret_to_best_fixed = 0.000914`
+
+这个值虽然很小，但它是**正数**，说明仍然存在可见剩余差距。
+
+第二，分段结果也明确说明它还存在局部短板：
+
+- 相比 `v2`，`v4` 在 `reserve` 段仍然更差
+- 相比 `fixed_reserve`，`v4` 在 `carbon` 段并不占优
+
+所以更准确的说法应该是：
+
+> `text_router_v4` 是**当前搜索和验证范围内的最优文本路由**，不是已经被证明无法再改进的最终最优。
+
+### 当前固定方式
+
+为了把这个状态固定下来，同时避免后续实验继续手工写版本号，代码里新增了：
+
+- `CURRENT_BEST_TEXT_ROUTER = "text_v4"`
+- `make_router("text_best")`
+- `eval/run_preference_shift.py --router_type text_best`
+
+因此，从这次之后：
+
+- `text_v4` 是当前已验证最佳版本
+- 新实验默认推荐直接用 `text_best`
+- 只有当后续实验在同一协议下明确超过 `v4` 时，才更新这个别名
+
+## 继续往下的实验建议
+
+在当前证据下，最合理的后续顺序不是再盲做 `v5`，而是按下面顺序推进：
+
+1. **重做 `M4` 的 corruption protocol**
+   目标不是再注入一个泛化的 `extreme_peak`，而是构造更贴近真实高层路由失效的错误：
+   - 在 `reserve` 段强行丢掉 `reserve_soc`
+   - 在 `carbon` 段故意路由到 cost-heavy expert
+   - 在跨 regime 切换点注入 stale instruction / stale expert
+
+2. **做 `text_best` 的 segment-level error attribution**
+   重点回答：
+   - 为什么 `v4` 在 `reserve` 段仍输给 `v2`
+   - 为什么它与 regime-wise best fixed 上界之间还剩 `0.000914`
+   - 剩余误差到底来自 instruction parse、expert mapping，还是 blending / persistence
+
+3. **做更真实的 preference-shift protocol**
+   当前四段硬切换还是太人工。下一轮应该增加：
+   - 更长的稳定段
+   - 渐变型偏好变化
+   - 更接近 operator language 的 instruction 重写
+
+4. **只有在上面三步完成后，再考虑 `v5`**
+   到那时如果还要做下一版，也不该再回到“自由生成连续权重”，而是围绕：
+   - expert persistence
+   - switch hysteresis
+   - regime transition guard
+   - segment summary context
+   这类更有证据支撑的方向推进。

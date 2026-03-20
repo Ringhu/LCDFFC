@@ -86,6 +86,21 @@ def test_text_v4_routes_to_reviewed_experts():
     assert abs(sum(result["weights"].values()) - 1.0) < 1e-6
 
 
+def test_text_best_alias_points_to_current_verified_best():
+    context = {
+        "instruction": "Resilience is the main priority. Keep meaningful battery reserve for future risk and avoid aggressive depletion.",
+        "price": 0.03,
+        "carbon_intensity": 0.40,
+        "grid_stress": "high",
+        "load_peak_forecast": 1.1,
+        "soc_avg": 0.22,
+        "price_trend": "stable",
+    }
+    best_router = make_router("text_best")
+    v4_router = make_router("text_v4")
+    assert best_router.route(context) == v4_router.route(context)
+
+
 def test_preference_score_prefers_lower_segment_metrics():
     load = np.array([1.0, 1.2, 0.8, 1.1], dtype=np.float32)
     prices = np.array([1.0, 1.0, 1.0, 1.0], dtype=np.float32)

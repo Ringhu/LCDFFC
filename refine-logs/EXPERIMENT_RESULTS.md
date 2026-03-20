@@ -125,6 +125,7 @@ CUDA_VISIBLE_DEVICES=3 python eval/run_preference_shift.py \
 1. `preference-shift` 评测桥已经搭起来了
 2. 低层 `forecast + QP` 在新评测脚本下保持稳定
 3. `heuristic / numeric / text` 三类 router 都已经能跑完整 episode，并产出 parseable 结果
+4. 第二版 `text_router_v2` 已经在完整 719 步实验中跑通
 
 ### 负面信号
 
@@ -140,6 +141,33 @@ CUDA_VISIBLE_DEVICES=3 python eval/run_preference_shift.py \
 - 但这并不是坏事，因为它已经在第一轮最小实验里被明确暴露出来
 - 这恰好说明 `experiment-bridge` 起到了作用：先用最小代价检验 thesis，而不是继续盲目扩架构
 
+## 第二版 router 改进（text_v2）
+
+在第一轮结果基础上，进一步做了第二版改进：
+
+1. 把 `text_v1` 的极端关键词映射改成更平滑的文本条件候选选择
+2. 补充了“相对最佳单一固定策略”的汇总口径，避免只看“regime 级最优固定策略上界”
+3. 在 `GPU 3` 上完成短程 sanity，在 `GPU 2` 上完成完整 719 步实验
+
+第二版关键结果：
+
+| Run | avg_preference_score | avg_regret_to_best_fixed | avg_regret_to_best_single_fixed |
+|---|---:|---:|---:|
+| fixed_reserve | 0.876931 | 0.001224 | 0.000000 |
+| heuristic_router | 0.878355 | 0.002647 | 0.001424 |
+| text_router (v1) | 0.884912 | 0.009205 | 0.007981 |
+| text_router_v2 | 0.876864 | 0.001157 | -0.000067 |
+
+含义：
+
+- `text_router_v2` 已经明显优于 `text_router v1`
+- `text_router_v2` 现在**略优于最佳单一固定策略**
+- 但 `text_router_v2` 仍然**没有超过“按 regime 选择最佳固定策略”的上界**
+
+因此，当前更准确的结论是：
+
+> 第二版已经让“语言条件化路由优于固定权重”第一次出现了正信号，但这条主张还不够稳，还需要继续扩大差距并验证鲁棒性。
+
 ## 是否可以进入 auto-review-loop
 
 - 当前状态：`YES`
@@ -152,7 +180,7 @@ CUDA_VISIBLE_DEVICES=3 python eval/run_preference_shift.py \
 
 优先顺序：
 
-1. 分析为什么 `text-router` 目前不如最佳固定权重
-2. 检查 `preference-shift` 任务是否仍然过于人工或偏置过强
-3. 尝试让 `text-router` 读取更丰富但仍低维的结构化摘要，而不是只做关键词映射
-4. 再决定是否需要进入真正的 LLM 推理或蒸馏阶段
+1. 分析 `text_router_v2` 和 `fixed_reserve / heuristic_router` 在各个 regime 中的剩余差距
+2. 对 `preference-shift` 协议做更真实的 regime 设计，减少过于人工的切换
+3. 将 `text_v2` 扩展到真正的结构化 prompt + constrained output，而不是模板化文本解析
+4. 启动 `M4`：注入低置信 / 错误输出，检查 fallback 是否能保住主结果

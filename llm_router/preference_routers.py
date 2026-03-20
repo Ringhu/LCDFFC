@@ -39,6 +39,14 @@ PRESET_PROFILES = {
 
 DEFAULT_REGIME_ORDER = ["cost", "carbon", "peak", "reserve"]
 
+CANDIDATE_COMPATIBILITY = {
+    "cost": {"cost": 1.0, "balanced": 0.75, "peak": 0.45, "reserve": 0.35, "carbon": 0.25},
+    "carbon": {"carbon": 1.0, "balanced": 0.75, "peak": 0.4, "reserve": 0.35, "cost": 0.2},
+    "peak": {"peak": 1.0, "reserve": 0.8, "balanced": 0.65, "carbon": 0.35, "cost": 0.25},
+    "reserve": {"reserve": 1.0, "peak": 0.8, "balanced": 0.6, "carbon": 0.3, "cost": 0.2},
+    "balanced": {"balanced": 1.0, "cost": 0.6, "carbon": 0.6, "peak": 0.6, "reserve": 0.5},
+}
+
 
 @dataclass
 class PreferenceRegime:
@@ -205,6 +213,106 @@ class TextTemplatePreferenceRouter:
         return _with_context_adjustment({"weights": weights, "constraints": constraints}, context)
 
 
+class TextAdaptivePreferenceRouterV2:
+    """Context-aware text router that selects and blends candidate profiles."""
+
+    COST_PAT = re.compile(r"(cost first|price first|reduce operating cost|成本优先|电价优先)", re.I)
+    CARBON_PAT = re.compile(r"(carbon reduction|carbon first|low-emission|低碳优先|碳排优先)", re.I)
+    PEAK_PAT = re.compile(r"(peak shaving|grid stress|protect the grid|削峰优先|电网压力)", re.I)
+    RESERVE_PAT = re.compile(r"(reserve|resilience|backup|保留.*soc|韧性优先|保底)", re.I)
+    NEGATE_COST_PAT = re.compile(r"(even if cost is not minimal|cost is not the main priority|即使成本不是最低|成本不是首要)", re.I)
+
+    def _dominant_intent(self, text: str) -> str:
+        text = text.strip()
+        if self.RESERVE_PAT.search(text):
+            return "reserve"
+        if self.PEAK_PAT.search(text):
+            return "peak"
+        if self.CARBON_PAT.search(text):
+            return "carbon"
+        if self.COST_PAT.search(text):
+            return "cost"
+        return "balanced"
+
+    def _base_priority(self, text: str) -> dict[str, float]:
+        dominant = self._dominant_intent(text)
+        vector = {k: 0.0 for k in ("cost", "carbon", "peak", "reserve")}
+        vector[dominant] = 1.0
+
+        if dominant == "carbon" and self.NEGATE_COST_PAT.search(text):
+            vector["cost"] = 0.0
+        elif dominant == "carbon":
+            vector["cost"] = 0.15
+        elif dominant == "peak":
+            vector["reserve"] = 0.2
+        elif dominant == "reserve":
+            vector["peak"] = 0.2
+
+        return vector
+
+    def _context_score(self, candidate_name: str, context: dict[str, Any]) -> float:
+        price = float(context.get("price", 0.0))
+        carbon = float(context.get("carbon_intensity", 0.0))
+        load_peak_forecast = float(context.get("load_peak_forecast", 0.0))
+        grid_stress = str(context.get("grid_stress", "low"))
+        soc = float(context.get("soc_avg", 0.5))
+
+        score = 0.0
+        if candidate_name == "cost":
+            score += 3.0 * price
+        elif candidate_name == "carbon":
+            score += 3.0 * carbon
+        elif candidate_name == "peak":
+            score += 0.7 * load_peak_forecast
+            score += 0.2 if grid_stress in {"high", "critical"} else 0.0
+        elif candidate_name == "reserve":
+            score += 0.25 if grid_stress in {"high", "critical"} else 0.0
+            score += max(0.35 - soc, 0.0)
+        elif candidate_name == "balanced":
+            score += 0.05
+
+        return score
+
+    def route(self, context: dict[str, Any]) -> dict[str, Any]:
+        text = str(context.get("instruction", ""))
+        dominant = self._dominant_intent(text)
+        base_priority = self._base_priority(text)
+
+        candidates = ["balanced", "cost", "carbon", "peak", "reserve"]
+        scored = []
+        for candidate in candidates:
+            compatibility = CANDIDATE_COMPATIBILITY[dominant][candidate]
+            score = compatibility + self._context_score(candidate, context)
+            scored.append((candidate, score))
+        best_candidate = max(scored, key=lambda item: item[1])[0]
+
+        candidate_profile = PRESET_PROFILES[best_candidate]
+        balanced_profile = PRESET_PROFILES["balanced"]
+        if dominant in {"peak", "reserve"}:
+            alpha = 0.8
+        elif dominant == "balanced":
+            alpha = 0.5
+        else:
+            alpha = 0.7
+
+        blended = {
+            "weights": {
+                key: alpha * candidate_profile["weights"][key] + (1 - alpha) * balanced_profile["weights"][key]
+                for key in candidate_profile["weights"]
+            },
+            "constraints": dict(candidate_profile["constraints"]),
+        }
+
+        if base_priority["reserve"] > 0 or best_candidate == "reserve":
+            blended["constraints"]["reserve_soc"] = max(blended["constraints"].get("reserve_soc") or 0.0, 0.3)
+
+        if dominant == "carbon" and self.NEGATE_COST_PAT.search(text):
+            blended["weights"]["cost"] *= 0.3
+            blended["weights"]["carbon"] += 0.1
+
+        return _with_context_adjustment(blended, context)
+
+
 def make_router(router_type: str, fixed_regime: str = "balanced"):
     """Factory for experiment routers."""
     router_type = router_type.lower()
@@ -216,4 +324,6 @@ def make_router(router_type: str, fixed_regime: str = "balanced"):
         return NumericPreferenceRouter()
     if router_type == "text":
         return TextTemplatePreferenceRouter()
+    if router_type == "text_v2":
+        return TextAdaptivePreferenceRouterV2()
     raise ValueError(f"Unsupported router_type: {router_type}")

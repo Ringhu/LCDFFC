@@ -35,6 +35,22 @@ def test_text_router_outputs_valid_profile():
     assert result["constraints"]["reserve_soc"] is not None
 
 
+def test_text_v2_router_handles_carbon_instruction_without_cost_bias():
+    router = make_router("text_v2")
+    result = router.route(
+        {
+            "instruction": "Carbon reduction is the main priority, even if cost is not minimal.",
+            "price": 0.03,
+            "carbon_intensity": 0.52,
+            "grid_stress": "medium",
+            "load_peak_forecast": 0.8,
+            "soc_avg": 0.4,
+        }
+    )
+    assert result["weights"]["carbon"] > result["weights"]["cost"]
+    assert abs(sum(result["weights"].values()) - 1.0) < 1e-6
+
+
 def test_preference_score_prefers_lower_segment_metrics():
     load = np.array([1.0, 1.2, 0.8, 1.1], dtype=np.float32)
     prices = np.array([1.0, 1.0, 1.0, 1.0], dtype=np.float32)

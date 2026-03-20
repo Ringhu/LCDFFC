@@ -47,6 +47,10 @@ def main():
     best_fixed_by_regime = {
         regime: min(scores, key=lambda item: item[1]) for regime, scores in fixed_scores_by_regime.items()
     }
+    best_single_fixed = min(
+        (row for row in run_rows if row["tag"] in args.fixed_tags),
+        key=lambda row: row["avg_preference_score"],
+    )
 
     for row in run_rows:
         regrets = {}
@@ -55,9 +59,16 @@ def main():
             regrets[regime] = score - best_score
         row["regret_to_best_fixed"] = regrets
         row["avg_regret_to_best_fixed"] = sum(regrets.values()) / max(len(regrets), 1)
+        row["avg_regret_to_best_single_fixed"] = (
+            row["avg_preference_score"] - best_single_fixed["avg_preference_score"]
+        )
 
     summary = {
         "reference_tag": args.reference_tag,
+        "best_single_fixed": {
+            "tag": best_single_fixed["tag"],
+            "avg_preference_score": best_single_fixed["avg_preference_score"],
+        },
         "best_fixed_by_regime": {
             regime: {"tag": tag, "score": score} for regime, (tag, score) in best_fixed_by_regime.items()
         },

@@ -38,6 +38,13 @@ PRESET_PROFILES = {
 }
 
 DEFAULT_REGIME_ORDER = ["cost", "carbon", "peak", "reserve"]
+REVIEWED_EXPERT_BY_INTENT = {
+    "cost": "balanced",
+    "carbon": "balanced",
+    "peak": "carbon",
+    "reserve": "reserve",
+    "balanced": "balanced",
+}
 
 CANDIDATE_COMPATIBILITY = {
     "cost": {"cost": 1.0, "balanced": 0.75, "peak": 0.45, "reserve": 0.35, "carbon": 0.25},
@@ -420,6 +427,83 @@ class TextAdaptivePreferenceRouterV3:
         return validate_router_output(result)
 
 
+class TextExpertSelectorRouterV4:
+    """Review-informed text router that selects among strong fixed experts.
+
+    This version is chosen after reviewing v1-v3 results. The fixed policies
+    are currently the strongest building blocks, so language should first route
+    across validated experts before trying to synthesize completely free-form
+    weights.
+    """
+
+    COST_PAT = TextAdaptivePreferenceRouterV2.COST_PAT
+    CARBON_PAT = TextAdaptivePreferenceRouterV2.CARBON_PAT
+    PEAK_PAT = TextAdaptivePreferenceRouterV2.PEAK_PAT
+    RESERVE_PAT = TextAdaptivePreferenceRouterV2.RESERVE_PAT
+    NEGATE_COST_PAT = TextAdaptivePreferenceRouterV2.NEGATE_COST_PAT
+
+    def _dominant_intent(self, text: str) -> str:
+        if self.RESERVE_PAT.search(text):
+            return "reserve"
+        if self.PEAK_PAT.search(text):
+            return "peak"
+        if self.CARBON_PAT.search(text):
+            return "carbon"
+        if self.COST_PAT.search(text):
+            return "cost"
+        return "balanced"
+
+    def route(self, context: dict[str, Any]) -> dict[str, Any]:
+        text = str(context.get("instruction", ""))
+        dominant = self._dominant_intent(text)
+        primary_name = REVIEWED_EXPERT_BY_INTENT[dominant]
+        primary = PRESET_PROFILES[primary_name]
+        balanced = PRESET_PROFILES["balanced"]
+
+        grid_stress = str(context.get("grid_stress", "low"))
+        soc = float(context.get("soc_avg", 0.5))
+        carbon = float(context.get("carbon_intensity", 0.0))
+        price = float(context.get("price", 0.0))
+        price_trend = str(context.get("price_trend", "stable"))
+
+        if dominant == "reserve":
+            alpha = 0.9
+        elif dominant == "peak":
+            alpha = 0.8
+        elif dominant == "carbon":
+            alpha = 0.75 if carbon > 0.45 else 0.65
+        elif dominant == "cost":
+            alpha = 0.65 if price > 0.035 or price_trend == "rising" else 0.55
+        else:
+            alpha = 0.5
+
+        result = {
+            "weights": {
+                key: alpha * primary["weights"][key] + (1 - alpha) * balanced["weights"][key]
+                for key in primary["weights"]
+            },
+            "constraints": dict(primary["constraints"]),
+        }
+
+        if dominant == "peak":
+            result["constraints"]["reserve_soc"] = max(result["constraints"].get("reserve_soc") or 0.0, 0.2)
+        if dominant == "reserve":
+            result["constraints"]["reserve_soc"] = max(result["constraints"].get("reserve_soc") or 0.0, 0.35)
+        if dominant == "cost" and grid_stress in {"high", "critical"}:
+            result["weights"]["peak"] += 0.05
+            result["weights"]["cost"] -= 0.05
+        if dominant == "carbon" and self.NEGATE_COST_PAT.search(text):
+            result["weights"]["cost"] *= 0.4
+            result["weights"]["carbon"] += 0.06
+        if soc < 0.2:
+            result["constraints"]["reserve_soc"] = max(result["constraints"].get("reserve_soc") or 0.0, 0.2)
+
+        weights = result["weights"]
+        normalized = _normalize_primary(weights["cost"], weights["carbon"], weights["peak"])
+        result["weights"].update(normalized)
+        return validate_router_output(result)
+
+
 def make_router(router_type: str, fixed_regime: str = "balanced"):
     """Factory for experiment routers."""
     router_type = router_type.lower()
@@ -435,4 +519,6 @@ def make_router(router_type: str, fixed_regime: str = "balanced"):
         return TextAdaptivePreferenceRouterV2()
     if router_type == "text_v3":
         return TextAdaptivePreferenceRouterV3()
+    if router_type == "text_v4":
+        return TextExpertSelectorRouterV4()
     raise ValueError(f"Unsupported router_type: {router_type}")

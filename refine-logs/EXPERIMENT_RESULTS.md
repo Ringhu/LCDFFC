@@ -225,6 +225,42 @@ CUDA_VISIBLE_DEVICES=3 python eval/run_preference_shift.py \
 
 > 已经实现并完成首轮实验，但目前结论仍偏弱，后续需要改成更贴近真实路由失效的 corruption protocol。
 
+## 经 review 选中的下一版：text_router_v4
+
+在 `v1-v3` 结果基础上，做了一次显式的本地 review，结论是：
+
+> 不再继续让语言层自由合成连续权重，而是让语言层优先在“已经被实验验证过较强”的 fixed experts 之间做选择 / 轻量混合。
+
+基于这条 reviewed idea，实现了：
+
+- `text_router_v4`
+
+它的核心思想是：
+
+- 文本先决定主偏好
+- 主偏好再映射到一组经过实验验证的 expert profiles
+- 路由层只在这些 expert 之间做受限选择与轻量混合，而不是完全自由生成
+
+完整 GPU2 结果：
+
+| Run | avg_preference_score | avg_regret_to_best_fixed | avg_regret_to_best_single_fixed |
+|---|---:|---:|---:|
+| fixed_reserve | 0.876931 | 0.001224 | 0.000000 |
+| heuristic_router | 0.878355 | 0.002647 | 0.001424 |
+| text_router_v2 | 0.876864 | 0.001157 | -0.000067 |
+| text_router_v3 | 0.878693 | 0.002986 | 0.001762 |
+| text_router_v4 | 0.876622 | 0.000914 | -0.000309 |
+
+结论：
+
+- `text_router_v4` 比 `text_router_v2` 更好
+- `text_router_v4` 继续优于最佳单一固定控制器
+- `text_router_v4` 也进一步缩小了与 regime-wise best fixed 上界的差距
+
+这意味着：
+
+> 当前最优的文本路由版本已经从 `v2` 更新为 `v4`，并且这次改进不是盲调，而是一次有 review 支撑的改进方向。
+
 ## 是否可以进入 auto-review-loop
 
 - 当前状态：`YES`
@@ -237,7 +273,7 @@ CUDA_VISIBLE_DEVICES=3 python eval/run_preference_shift.py \
 
 优先顺序：
 
-1. 保留 `text_router_v2` 作为当前最佳版本，不再把 `v3` 继续往前推
-2. 分析 `text_router_v2` 和 `fixed_reserve / heuristic_router` 在各个 regime 中的剩余差距
+1. 保留 `text_router_v4` 作为当前最佳版本
+2. 继续分析 `text_router_v4` 与 regime-wise best fixed 上界之间的剩余差距
 3. 对 `preference-shift` 协议做更真实的 regime 设计，减少过于人工的切换
-4. 把 `M4` 的 corruption protocol 改成更贴近真实高层路由失效的形式，而不是只做极端 peak 偏置
+4. 重做 `M4` 的 corruption protocol，使其更贴近真实高层路由失效

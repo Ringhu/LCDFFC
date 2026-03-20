@@ -329,7 +329,7 @@ def main():
     parser.add_argument("--controller_config", type=str, default="configs/controller.yaml")
     parser.add_argument("--output_dir", type=str, default="reports/preference_shift")
     parser.add_argument("--tag", type=str, default="preference_shift")
-    parser.add_argument("--router_type", choices=["fixed", "heuristic", "numeric", "text", "text_v2", "text_v3"], default="heuristic")
+    parser.add_argument("--router_type", choices=["fixed", "heuristic", "numeric", "text", "text_v2", "text_v3", "text_v4"], default="heuristic")
     parser.add_argument("--fixed_regime", choices=["balanced", "cost", "carbon", "peak", "reserve"], default="balanced")
     parser.add_argument("--forecast_mode", choices=["learned", "oracle", "myopic"], default="learned")
     parser.add_argument("--oracle_data", type=str, default="artifacts/forecast_data.npz")

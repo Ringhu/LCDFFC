@@ -704,3 +704,101 @@ sanity 结果确认了：
 所以这轮真正回答了上轮留下的问题：
 
 > 当前 `text_best` 的剩余误差不是平均分散在所有 regime 上，而是以 `reserve` 为第一敏感点、`carbon` 为第二敏感点。
+
+## reviewed `v5 / v6`：reserve-aware release guard
+
+在 targeted ablation 明确了 `reserve` 是第一主敏感点之后，这轮没有直接继续做更大的 router 结构，而是先连续做了两轮经过 review 的窄改版：
+
+- `refine-logs/auto-review/2026-03-20-v5-next-step.md`
+- `refine-logs/auto-review/2026-03-20-v6-next-step.md`
+
+两轮 review 的共同原则都是：
+
+> 不去碰更大的语言解析与 carbon remapping，而是先只验证一件事：从 `reserve` 段退出时，是否应该保留一小段 reserve-aware release guard。
+
+### `text_v5`：方向正确，但 guard 过宽
+
+`v5` 的设计是：
+
+- 在 `reserve` 段结束后保留一段 reserve-aware persistence
+- 并在后续 cost/carbon/peak 段里继续加 reserve floor
+
+完整 GPU2 结果：
+
+| Run | avg_preference_score | avg_regret_to_best_fixed | avg_regret_to_best_single_fixed |
+|---|---:|---:|---:|
+| text_router_v4 | 0.876622 | 0.000914 | -0.000309 |
+| text_router_v5 | 0.876862 | 0.001154 | -0.000070 |
+
+分段对比 `v4 -> v5`：
+
+- `carbon` 段略有改善
+- `reserve` 段也略有改善
+- 但 `cost` 段明显更差
+
+因此最准确的解释是：
+
+> `v5` 没有否定 reserve-aware 方向本身，而是说明 guard 范围太宽，已经把本该只在 reserve 退出时保留的保护，扩散到了 cost 段。
+
+这和路由统计是一致的：
+
+- `v5` 在 `cost` / `carbon` 段都维持了明显更高的 `reserve_soc`
+
+所以：
+
+- `v5` **没有超过** `v4`
+- `text_best` **不升级**
+
+### `text_v6`：guard 收窄后，与 `v4` 完全打平
+
+基于 `v5` 的失败模式，又做了一次 review，把 `v6` 收窄为：
+
+- 更短的 reserve release 窗口
+- 只在 `soc` 仍偏低时才触发
+- guard 强度也更低
+
+完整 GPU2 结果：
+
+| Run | avg_preference_score | avg_regret_to_best_fixed | avg_regret_to_best_single_fixed |
+|---|---:|---:|---:|
+| text_router_v4 | 0.876622 | 0.000914 | -0.000309 |
+| text_router_v6 | 0.876622 | 0.000914 | -0.000309 |
+
+更进一步，gap analysis 显示：
+
+- `v6` 相对 `v4` 的四段 delta 全部是 `0.0`
+- route stats 也完全一致
+
+这说明：
+
+> `v6` 把 guard 收窄之后，已经窄到在当前 clean preference-shift 协议里几乎不触发，因此最终效果与 `v4` 完全一致。
+
+也就是说：
+
+- `v5` 是“有效但过宽”
+- `v6` 是“足够窄，但在当前协议下等于不生效”
+
+### 当前结论
+
+这两轮 reviewed 改进给出的结论其实很清楚：
+
+1. reserve-aware release guard 这个大方向并没有被否定
+2. 但在当前 clean protocol 上：
+   - 稍微宽一点就会伤到 `cost`
+   - 稍微窄一点又会退化成和 `v4` 完全一样
+3. 因此，当前最优 router **仍然是 `text_v4`**
+4. `CURRENT_BEST_TEXT_ROUTER` 暂时**不更新**
+
+### 这对下一步的含义
+
+`v5 / v6` 的结果说明，下一步如果还继续往前推，不能再只做“静态 release guard”。
+
+更合理的下一步应该是：
+
+- `reserve-aware persistence + hysteresis`
+  或
+- `reserve-aware persistence + explicit transition trigger`
+
+也就是说，后续如果还有 `v7`，它不该只是继续改一个固定窗口，而应当回答：
+
+> 到底在什么条件下，才应该从 reserve 模式真正释放出来，而不是靠一个静态步数窗口硬控。

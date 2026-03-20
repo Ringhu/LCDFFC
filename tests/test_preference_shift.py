@@ -103,6 +103,66 @@ def test_text_best_alias_points_to_current_verified_best():
     assert best_router.route(context) == v4_router.route(context)
 
 
+def test_text_v5_keeps_reserve_guard_after_leaving_reserve():
+    router = make_router("text_v5")
+    reserve_context = {
+        "regime_name": "reserve",
+        "instruction": "Resilience is the main priority. Keep meaningful battery reserve for future risk and avoid aggressive depletion.",
+        "price": 0.03,
+        "carbon_intensity": 0.40,
+        "grid_stress": "medium",
+        "load_peak_forecast": 0.9,
+        "soc_avg": 0.34,
+        "price_trend": "stable",
+    }
+    cost_context = {
+        "regime_name": "cost",
+        "instruction": "Electricity price is the main priority. Reduce operating cost first, but keep the controller stable.",
+        "price": 0.045,
+        "carbon_intensity": 0.41,
+        "grid_stress": "medium",
+        "load_peak_forecast": 0.8,
+        "soc_avg": 0.32,
+        "price_trend": "rising",
+    }
+    router.route(reserve_context)
+    guarded = router.route(cost_context)
+    assert guarded["constraints"]["reserve_soc"] is not None
+    assert guarded["constraints"]["reserve_soc"] >= 0.25
+
+
+def test_text_v6_only_keeps_narrow_release_guard_when_soc_is_low():
+    router = make_router("text_v6")
+    reserve_context = {
+        "regime_name": "reserve",
+        "instruction": "Resilience is the main priority. Keep meaningful battery reserve for future risk and avoid aggressive depletion.",
+        "price": 0.03,
+        "carbon_intensity": 0.40,
+        "grid_stress": "medium",
+        "load_peak_forecast": 0.9,
+        "soc_avg": 0.34,
+        "price_trend": "stable",
+    }
+    low_soc_cost_context = {
+        "regime_name": "cost",
+        "instruction": "Electricity price is the main priority. Reduce operating cost first, but keep the controller stable.",
+        "price": 0.045,
+        "carbon_intensity": 0.41,
+        "grid_stress": "medium",
+        "load_peak_forecast": 0.8,
+        "soc_avg": 0.32,
+        "price_trend": "rising",
+    }
+    high_soc_cost_context = dict(low_soc_cost_context)
+    high_soc_cost_context["soc_avg"] = 0.45
+    router.route(reserve_context)
+    guarded = router.route(low_soc_cost_context)
+    released = router.route(high_soc_cost_context)
+    assert guarded["constraints"]["reserve_soc"] is not None
+    assert guarded["constraints"]["reserve_soc"] >= 0.2
+    assert released["constraints"]["reserve_soc"] in (None, 0.0)
+
+
 def test_wrong_expert_corruption_drops_reserve_guard_in_reserve_regime():
     strategy = build_corrupted_strategy(
         {

@@ -10,5 +10,5 @@
 | R006 | M2 | 雏形 | language-conditioned router（v1 → v2） | test | regime regret | MUST | DONE | v1 使用 text-template，结果明显弱于最佳固定；v2 在 GPU3/GPU2 复跑后，`avg_preference_score=0.876864`，已略优于最佳单一固定策略 `fixed_reserve=0.876931` |
 | R007 | M3 | ablation | 结构化数值路由器 | test | regime regret | MUST | DONE | GPU2 全量评测完成；当前结果劣于 heuristic，且未优于最佳固定权重 |
 | R008 | M3 | ablation | 无 router（固定权重） | test | regime regret | MUST | DONE | 由 `fixed_balanced` 和其他固定权重变体共同覆盖 |
-| R009 | M4 | 鲁棒性 | text router + deterministic fallback | shifted | validity / KPI | MUST | TODO | 尚未注入低置信 / 错误输出场景 |
+| R009 | M4 | 鲁棒性 | text router + deterministic fallback | shifted | validity / KPI | MUST | DONE | 已在 `text_v2` 上完成高频 corruption（every 12 steps）对照；当前 corruption 模式下有/无 fallback 差异很小，说明这一设定下 M4 结论仍偏弱 |
 | R010 | M5 | 扩展 | 最佳 router 在 OOD weather/price 下 | shifted | degradation | NICE | TODO | 仅在主结果成立后运行 |

@@ -33,6 +33,7 @@ from eval.run_controller import (
 )
 from llm_router.preference_routers import (
     build_default_preference_schedule,
+    HeuristicPreferenceRouter,
     make_router,
     resolve_regime,
 )
@@ -127,6 +128,9 @@ def run_preference_shift(
     oracle_data_path: str,
     device: str,
     max_steps: int | None = None,
+    corruption_every: int = 0,
+    corruption_mode: str = "extreme_peak",
+    route_fallback: str = "none",
 ) -> dict[str, object]:
     """Run one preference-shift experiment."""
     from citylearn.citylearn import CityLearnEnv
@@ -168,6 +172,7 @@ def run_preference_shift(
         planned_total_steps = min(planned_total_steps, int(max_steps))
     schedule = build_default_preference_schedule(planned_total_steps)
     router = make_router(router_type, fixed_regime=fixed_regime)
+    fallback_router = HeuristicPreferenceRouter() if route_fallback == "heuristic" else None
 
     terminated = False
     truncated = False
@@ -194,6 +199,38 @@ def run_preference_shift(
         soc_vals = get_current_socs(env)
         route_context = build_route_context(current_features, qp_forecast, soc_vals, regime)
         strategy = router.route(route_context)
+        corrupted = False
+
+        if corruption_every > 0 and step > 0 and step % corruption_every == 0:
+            corrupted = True
+            if corruption_mode == "extreme_peak":
+                strategy = {
+                    "weights": {"cost": 0.05, "carbon": 0.05, "peak": 0.8, "smooth": 0.1},
+                    "constraints": {"reserve_soc": None, "max_charge_rate": None},
+                }
+            elif corruption_mode == "extreme_cost":
+                strategy = {
+                    "weights": {"cost": 0.8, "carbon": 0.05, "peak": 0.05, "smooth": 0.1},
+                    "constraints": {"reserve_soc": None, "max_charge_rate": None},
+                }
+            elif corruption_mode == "invalid_missing_constraints":
+                strategy = {"weights": {"cost": 1.5}}
+            else:
+                raise ValueError(f"Unsupported corruption_mode: {corruption_mode}")
+
+        fallback_used = False
+        if route_fallback == "schema":
+            strategy = {
+                "weights": dict(strategy.get("weights", {})),
+                "constraints": dict(strategy.get("constraints", {})) if isinstance(strategy.get("constraints", {}), dict) else {},
+            }
+            from llm_router.json_schema import validate_router_output
+            validated = validate_router_output(strategy)
+            fallback_used = corrupted and validated != strategy
+            strategy = validated
+        elif route_fallback == "heuristic" and corrupted:
+            strategy = fallback_router.route(route_context)
+            fallback_used = True
 
         battery_action = float(
             ctrl.act(
@@ -223,6 +260,8 @@ def run_preference_shift(
                 "battery_action": battery_action,
                 "soc_avg": float(np.mean(soc_vals)),
                 "grid_stress": route_context["grid_stress"],
+                "corrupted": corrupted,
+                "fallback_used": fallback_used,
             }
         )
         step += 1
@@ -243,6 +282,9 @@ def run_preference_shift(
     episode_kpis["router_type"] = router_type
     episode_kpis["forecast_mode"] = forecast_mode
     episode_kpis["fixed_regime"] = fixed_regime if router_type == "fixed" else None
+    episode_kpis["corruption_every"] = corruption_every
+    episode_kpis["corruption_mode"] = corruption_mode if corruption_every > 0 else None
+    episode_kpis["route_fallback"] = route_fallback
 
     segment_summaries = []
     for regime in schedule:
@@ -287,12 +329,25 @@ def main():
     parser.add_argument("--controller_config", type=str, default="configs/controller.yaml")
     parser.add_argument("--output_dir", type=str, default="reports/preference_shift")
     parser.add_argument("--tag", type=str, default="preference_shift")
-    parser.add_argument("--router_type", choices=["fixed", "heuristic", "numeric", "text", "text_v2"], default="heuristic")
+    parser.add_argument("--router_type", choices=["fixed", "heuristic", "numeric", "text", "text_v2", "text_v3"], default="heuristic")
     parser.add_argument("--fixed_regime", choices=["balanced", "cost", "carbon", "peak", "reserve"], default="balanced")
     parser.add_argument("--forecast_mode", choices=["learned", "oracle", "myopic"], default="learned")
     parser.add_argument("--oracle_data", type=str, default="artifacts/forecast_data.npz")
     parser.add_argument("--device", type=str, default="cpu")
     parser.add_argument("--max_steps", type=int, default=None)
+    parser.add_argument("--corruption_every", type=int, default=0)
+    parser.add_argument(
+        "--corruption_mode",
+        type=str,
+        default="extreme_peak",
+        choices=["extreme_peak", "extreme_cost", "invalid_missing_constraints"],
+    )
+    parser.add_argument(
+        "--route_fallback",
+        type=str,
+        default="none",
+        choices=["none", "schema", "heuristic"],
+    )
     args = parser.parse_args()
 
     with open(args.forecast_config) as f:
@@ -314,6 +369,9 @@ def main():
         oracle_data_path=args.oracle_data,
         device=args.device,
         max_steps=args.max_steps,
+        corruption_every=args.corruption_every,
+        corruption_mode=args.corruption_mode,
+        route_fallback=args.route_fallback,
     )
 
 

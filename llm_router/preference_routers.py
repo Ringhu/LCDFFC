@@ -313,6 +313,113 @@ class TextAdaptivePreferenceRouterV2:
         return _with_context_adjustment(blended, context)
 
 
+class TextAdaptivePreferenceRouterV3:
+    """Instruction-anchored router with bounded context adaptation.
+
+    V2 improved over the first keyword router but still let context sometimes
+    overpower the explicit textual intent. V3 keeps the instruction as the
+    dominant source of weights and uses context only for bounded local tweaks.
+    """
+
+    COST_PAT = TextAdaptivePreferenceRouterV2.COST_PAT
+    CARBON_PAT = TextAdaptivePreferenceRouterV2.CARBON_PAT
+    PEAK_PAT = TextAdaptivePreferenceRouterV2.PEAK_PAT
+    RESERVE_PAT = TextAdaptivePreferenceRouterV2.RESERVE_PAT
+    NEGATE_COST_PAT = TextAdaptivePreferenceRouterV2.NEGATE_COST_PAT
+
+    def _dominant_intent(self, text: str) -> str:
+        text = text.strip()
+        if self.RESERVE_PAT.search(text):
+            return "reserve"
+        if self.PEAK_PAT.search(text):
+            return "peak"
+        if self.CARBON_PAT.search(text):
+            return "carbon"
+        if self.COST_PAT.search(text):
+            return "cost"
+        return "balanced"
+
+    def route(self, context: dict[str, Any]) -> dict[str, Any]:
+        text = str(context.get("instruction", ""))
+        dominant = self._dominant_intent(text)
+        result = {
+            "weights": dict(PRESET_PROFILES[dominant]["weights"]),
+            "constraints": dict(PRESET_PROFILES[dominant]["constraints"]),
+        }
+
+        price = float(context.get("price", 0.0))
+        carbon = float(context.get("carbon_intensity", 0.0))
+        grid_stress = str(context.get("grid_stress", "low"))
+        soc = float(context.get("soc_avg", 0.5))
+        load_peak_forecast = float(context.get("load_peak_forecast", 0.0))
+        price_trend = str(context.get("price_trend", "stable"))
+
+        if dominant == "cost":
+            if price > 0.04 or price_trend == "rising":
+                result["weights"]["cost"] += 0.08
+            if grid_stress in {"high", "critical"}:
+                result["weights"]["peak"] += 0.05
+            result["weights"]["carbon"] = min(result["weights"]["carbon"], 0.12)
+
+        elif dominant == "carbon":
+            result["weights"]["carbon"] += 0.05
+            if carbon > 0.48:
+                result["weights"]["carbon"] += 0.04
+            if self.NEGATE_COST_PAT.search(text):
+                result["weights"]["cost"] *= 0.25
+            if grid_stress == "critical":
+                result["weights"]["peak"] += 0.06
+            result["weights"]["peak"] = min(result["weights"]["peak"], 0.22)
+
+        elif dominant == "peak":
+            if load_peak_forecast > 1.0 or grid_stress in {"high", "critical"}:
+                result["weights"]["peak"] += 0.08
+            result["constraints"]["reserve_soc"] = max(result["constraints"].get("reserve_soc") or 0.0, 0.25)
+
+        elif dominant == "reserve":
+            result["constraints"]["reserve_soc"] = max(result["constraints"].get("reserve_soc") or 0.0, 0.35)
+            if soc < 0.25:
+                result["weights"]["peak"] += 0.03
+            if grid_stress in {"high", "critical"}:
+                result["weights"]["peak"] += 0.05
+            result["weights"]["cost"] = min(result["weights"]["cost"], 0.18)
+
+        else:
+            if price > 0.04:
+                result["weights"]["cost"] += 0.03
+            if carbon > 0.48:
+                result["weights"]["carbon"] += 0.03
+            if grid_stress in {"high", "critical"}:
+                result["weights"]["peak"] += 0.04
+
+        if soc < 0.18:
+            result["constraints"]["reserve_soc"] = max(result["constraints"].get("reserve_soc") or 0.0, 0.2)
+
+        weights = result["weights"]
+        primary = _normalize_primary(weights["cost"], weights["carbon"], weights["peak"])
+        result["weights"].update(primary)
+
+        # Keep explicit textual intent dominant after normalization.
+        dominant_floor = {
+            "cost": ("cost", 0.55),
+            "carbon": ("carbon", 0.55),
+            "peak": ("peak", 0.55),
+            "reserve": ("peak", 0.45),
+            "balanced": ("cost", None),
+        }
+        key, minimum = dominant_floor[dominant]
+        if minimum is not None and result["weights"][key] < minimum:
+            deficit = minimum - result["weights"][key]
+            take_from = [k for k in ("cost", "carbon", "peak") if k != key]
+            available = sum(result["weights"][k] for k in take_from)
+            if available > 1e-8:
+                for other in take_from:
+                    result["weights"][other] -= deficit * (result["weights"][other] / available)
+                result["weights"][key] = minimum
+
+        return validate_router_output(result)
+
+
 def make_router(router_type: str, fixed_regime: str = "balanced"):
     """Factory for experiment routers."""
     router_type = router_type.lower()
@@ -326,4 +433,6 @@ def make_router(router_type: str, fixed_regime: str = "balanced"):
         return TextTemplatePreferenceRouter()
     if router_type == "text_v2":
         return TextAdaptivePreferenceRouterV2()
+    if router_type == "text_v3":
+        return TextAdaptivePreferenceRouterV3()
     raise ValueError(f"Unsupported router_type: {router_type}")

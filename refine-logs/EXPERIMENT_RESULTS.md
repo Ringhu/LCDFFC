@@ -168,6 +168,63 @@ CUDA_VISIBLE_DEVICES=3 python eval/run_preference_shift.py \
 
 > 第二版已经让“语言条件化路由优于固定权重”第一次出现了正信号，但这条主张还不够稳，还需要继续扩大差距并验证鲁棒性。
 
+## 第三版 router 与 M4 结果
+
+### text_router_v3
+
+为了继续放大 `v2` 的优势，又实现了 `text_router_v3`：
+
+- 更强调“文本主偏好必须保持主导”
+- 用 bounded context adjustment 替代过强的候选 profile 竞争
+- 目标是减少上下文把文本主意图反客为主的情况
+
+完整 719 步结果：
+
+| Run | avg_preference_score | avg_regret_to_best_fixed | avg_regret_to_best_single_fixed |
+|---|---:|---:|---:|
+| text_router_v2 | 0.876864 | 0.001157 | -0.000067 |
+| text_router_v3 | 0.878693 | 0.002986 | 0.001762 |
+
+结论：
+
+- `text_router_v3` 没有继续提升，反而比 `v2` 更差
+- 当前最优文本路由仍然是 `text_router_v2`
+- 这说明第二轮改进后的方向不应该再盲目继续“强化文本先验”，而应回到更细的协议与上下文表示设计
+
+### M4：fallback 鲁棒性检查
+
+对当前最优的 `text_router_v2`，做了更强的 corruption 注入：
+
+- corruption 频率：每 `12` 步
+- corruption 模式：`extreme_peak`
+- 对比：
+  - `route_fallback = none`
+  - `route_fallback = heuristic`
+
+结果：
+
+| Run | cost | carbon | peak | ramping |
+|---|---:|---:|---:|---:|
+| text_v2_corrupt12_none | 30.5747 | 468.4389 | 14.9948 | 856.6183 |
+| text_v2_corrupt12_fallback | 30.5831 | 468.5653 | 14.9948 | 856.5503 |
+
+补充统计：
+
+- 两组实验都注入了 `59` 次 corruption
+- fallback 版本中 `59` 次 corruption 全部触发了 heuristic fallback
+- 但 KPI 差异仍然很小
+
+结论：
+
+- 当前 corruption 设定下，fallback 的保护作用没有形成显著指标差异
+- 更合理的解释不是“fallback 没用”，而是：
+  1. 当前低层 `forecast + QP` 本身已经比较稳
+  2. 当前 chosen corruption mode 还不够贴近真正会破坏控制质量的高层路由失效
+
+因此，`M4` 当前状态应被视为：
+
+> 已经实现并完成首轮实验，但目前结论仍偏弱，后续需要改成更贴近真实路由失效的 corruption protocol。
+
 ## 是否可以进入 auto-review-loop
 
 - 当前状态：`YES`
@@ -180,7 +237,7 @@ CUDA_VISIBLE_DEVICES=3 python eval/run_preference_shift.py \
 
 优先顺序：
 
-1. 分析 `text_router_v2` 和 `fixed_reserve / heuristic_router` 在各个 regime 中的剩余差距
-2. 对 `preference-shift` 协议做更真实的 regime 设计，减少过于人工的切换
-3. 将 `text_v2` 扩展到真正的结构化 prompt + constrained output，而不是模板化文本解析
-4. 启动 `M4`：注入低置信 / 错误输出，检查 fallback 是否能保住主结果
+1. 保留 `text_router_v2` 作为当前最佳版本，不再把 `v3` 继续往前推
+2. 分析 `text_router_v2` 和 `fixed_reserve / heuristic_router` 在各个 regime 中的剩余差距
+3. 对 `preference-shift` 协议做更真实的 regime 设计，减少过于人工的切换
+4. 把 `M4` 的 corruption protocol 改成更贴近真实高层路由失效的形式，而不是只做极端 peak 偏置

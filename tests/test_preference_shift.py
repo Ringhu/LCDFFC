@@ -51,6 +51,23 @@ def test_text_v2_router_handles_carbon_instruction_without_cost_bias():
     assert abs(sum(result["weights"].values()) - 1.0) < 1e-6
 
 
+def test_text_v3_router_keeps_instruction_dominant():
+    router = make_router("text_v3")
+    result = router.route(
+        {
+            "instruction": "Electricity price is the main priority. Reduce operating cost first, but keep the controller stable.",
+            "price": 0.028,
+            "carbon_intensity": 0.42,
+            "grid_stress": "medium",
+            "load_peak_forecast": 0.75,
+            "soc_avg": 0.3,
+            "price_trend": "stable",
+        }
+    )
+    assert result["weights"]["cost"] >= 0.55
+    assert abs(sum(result["weights"].values()) - 1.0) < 1e-6
+
+
 def test_preference_score_prefers_lower_segment_metrics():
     load = np.array([1.0, 1.2, 0.8, 1.1], dtype=np.float32)
     prices = np.array([1.0, 1.0, 1.0, 1.0], dtype=np.float32)

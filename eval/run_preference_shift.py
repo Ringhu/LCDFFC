@@ -32,12 +32,21 @@ from eval.run_controller import (
     obs_to_features,
 )
 from llm_router.preference_routers import (
+    PRESET_PROFILES,
     build_default_preference_schedule,
     HeuristicPreferenceRouter,
     make_router,
     resolve_regime,
 )
 from models.gru_forecaster import GRUForecaster
+
+WRONG_EXPERT_BY_REGIME = {
+    "cost": "reserve",
+    "carbon": "cost",
+    "peak": "cost",
+    "reserve": "cost",
+    "balanced": "cost",
+}
 
 
 def build_route_context(
@@ -114,6 +123,40 @@ def load_model_if_needed(
     return model, mean, std
 
 
+def build_corrupted_strategy(
+    route_context: dict[str, object],
+    corruption_mode: str,
+) -> dict[str, object]:
+    """Inject a structured corruption into the high-level routing output."""
+    if corruption_mode == "extreme_peak":
+        return {
+            "weights": {"cost": 0.05, "carbon": 0.05, "peak": 0.8, "smooth": 0.1},
+            "constraints": {"reserve_soc": None, "max_charge_rate": None},
+        }
+    if corruption_mode == "extreme_cost":
+        return {
+            "weights": {"cost": 0.8, "carbon": 0.05, "peak": 0.05, "smooth": 0.1},
+            "constraints": {"reserve_soc": None, "max_charge_rate": None},
+        }
+    if corruption_mode == "invalid_missing_constraints":
+        return {"weights": {"cost": 1.5}}
+    if corruption_mode in {"wrong_expert", "transition_wrong_expert"}:
+        regime_name = str(route_context.get("regime_name", "balanced"))
+        wrong_name = WRONG_EXPERT_BY_REGIME.get(regime_name, "cost")
+        profile = PRESET_PROFILES[wrong_name]
+        corrupted = {
+            "weights": dict(profile["weights"]),
+            "constraints": dict(profile["constraints"]),
+        }
+        if regime_name == "reserve":
+            corrupted["constraints"]["reserve_soc"] = None
+        if regime_name == "carbon":
+            corrupted["weights"]["cost"] = max(corrupted["weights"]["cost"], 0.65)
+            corrupted["weights"]["carbon"] = min(corrupted["weights"]["carbon"], 0.1)
+        return corrupted
+    raise ValueError(f"Unsupported corruption_mode: {corruption_mode}")
+
+
 def run_preference_shift(
     schema: str,
     checkpoint: str,
@@ -130,6 +173,7 @@ def run_preference_shift(
     max_steps: int | None = None,
     corruption_every: int = 0,
     corruption_mode: str = "extreme_peak",
+    corruption_window: int = 1,
     route_fallback: str = "none",
 ) -> dict[str, object]:
     """Run one preference-shift experiment."""
@@ -179,6 +223,8 @@ def run_preference_shift(
     step = 0
     actions_log = []
     route_trace = []
+    previous_regime_name: str | None = None
+    transition_corruption_remaining = 0
 
     while not (terminated or truncated) and step < planned_total_steps:
         history_arr = np.array(history_buf)
@@ -196,27 +242,23 @@ def run_preference_shift(
             qp_forecast = build_myopic_forecast(current_features, ctrl.horizon)
 
         regime = resolve_regime(schedule, step)
+        if corruption_mode == "transition_wrong_expert" and previous_regime_name is not None:
+            if regime.name != previous_regime_name:
+                transition_corruption_remaining = max(int(corruption_window), 1)
+        previous_regime_name = regime.name
         soc_vals = get_current_socs(env)
         route_context = build_route_context(current_features, qp_forecast, soc_vals, regime)
         strategy = router.route(route_context)
         corrupted = False
 
-        if corruption_every > 0 and step > 0 and step % corruption_every == 0:
+        if corruption_mode == "transition_wrong_expert":
+            corrupted = transition_corruption_remaining > 0
+            if corrupted:
+                transition_corruption_remaining -= 1
+        elif corruption_every > 0 and step > 0 and step % corruption_every == 0:
             corrupted = True
-            if corruption_mode == "extreme_peak":
-                strategy = {
-                    "weights": {"cost": 0.05, "carbon": 0.05, "peak": 0.8, "smooth": 0.1},
-                    "constraints": {"reserve_soc": None, "max_charge_rate": None},
-                }
-            elif corruption_mode == "extreme_cost":
-                strategy = {
-                    "weights": {"cost": 0.8, "carbon": 0.05, "peak": 0.05, "smooth": 0.1},
-                    "constraints": {"reserve_soc": None, "max_charge_rate": None},
-                }
-            elif corruption_mode == "invalid_missing_constraints":
-                strategy = {"weights": {"cost": 1.5}}
-            else:
-                raise ValueError(f"Unsupported corruption_mode: {corruption_mode}")
+        if corrupted:
+            strategy = build_corrupted_strategy(route_context, corruption_mode)
 
         fallback_used = False
         if route_fallback == "schema":
@@ -282,8 +324,10 @@ def run_preference_shift(
     episode_kpis["router_type"] = router_type
     episode_kpis["forecast_mode"] = forecast_mode
     episode_kpis["fixed_regime"] = fixed_regime if router_type == "fixed" else None
+    corruption_active = corruption_every > 0 or corruption_mode == "transition_wrong_expert"
     episode_kpis["corruption_every"] = corruption_every
-    episode_kpis["corruption_mode"] = corruption_mode if corruption_every > 0 else None
+    episode_kpis["corruption_mode"] = corruption_mode if corruption_active else None
+    episode_kpis["corruption_window"] = int(corruption_window)
     episode_kpis["route_fallback"] = route_fallback
 
     segment_summaries = []
@@ -344,8 +388,15 @@ def main():
         "--corruption_mode",
         type=str,
         default="extreme_peak",
-        choices=["extreme_peak", "extreme_cost", "invalid_missing_constraints"],
+        choices=[
+            "extreme_peak",
+            "extreme_cost",
+            "invalid_missing_constraints",
+            "wrong_expert",
+            "transition_wrong_expert",
+        ],
     )
+    parser.add_argument("--corruption_window", type=int, default=1)
     parser.add_argument(
         "--route_fallback",
         type=str,
@@ -375,6 +426,7 @@ def main():
         max_steps=args.max_steps,
         corruption_every=args.corruption_every,
         corruption_mode=args.corruption_mode,
+        corruption_window=args.corruption_window,
         route_fallback=args.route_fallback,
     )
 

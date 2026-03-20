@@ -7,6 +7,8 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from eval.run_preference_shift import build_corrupted_strategy
+from eval.analyze_preference_shift_gap import summarize_routes
 from eval.preference_shift_metrics import compute_episode_kpis, compute_preference_score, compute_segment_metrics
 from llm_router.preference_routers import build_default_preference_schedule, make_router, resolve_regime
 
@@ -99,6 +101,55 @@ def test_text_best_alias_points_to_current_verified_best():
     best_router = make_router("text_best")
     v4_router = make_router("text_v4")
     assert best_router.route(context) == v4_router.route(context)
+
+
+def test_wrong_expert_corruption_drops_reserve_guard_in_reserve_regime():
+    strategy = build_corrupted_strategy(
+        {
+            "regime_name": "reserve",
+            "instruction": "Keep reserve for resilience.",
+        },
+        corruption_mode="wrong_expert",
+    )
+    assert strategy["constraints"]["reserve_soc"] is None
+    assert strategy["weights"]["cost"] >= 0.65
+
+
+def test_transition_wrong_expert_corruption_misroutes_carbon_regime():
+    strategy = build_corrupted_strategy(
+        {
+            "regime_name": "carbon",
+            "instruction": "Carbon reduction is the main priority.",
+        },
+        corruption_mode="transition_wrong_expert",
+    )
+    assert strategy["weights"]["cost"] >= 0.65
+    assert strategy["weights"]["carbon"] <= 0.1
+
+
+def test_summarize_routes_counts_corruption_and_fallback():
+    summary = summarize_routes(
+        [
+            {
+                "regime": "cost",
+                "weights": {"cost": 0.4, "carbon": 0.2, "peak": 0.3, "smooth": 0.1},
+                "constraints": {"reserve_soc": None},
+                "corrupted": False,
+                "fallback_used": False,
+            },
+            {
+                "regime": "cost",
+                "weights": {"cost": 0.6, "carbon": 0.1, "peak": 0.2, "smooth": 0.1},
+                "constraints": {"reserve_soc": 0.2},
+                "corrupted": True,
+                "fallback_used": True,
+            },
+        ]
+    )
+    assert summary["cost"]["num_steps"] == 2
+    assert summary["cost"]["num_corrupted"] == 1
+    assert summary["cost"]["num_fallback_used"] == 1
+    assert summary["cost"]["avg_reserve_soc"] == 0.2
 
 
 def test_preference_score_prefers_lower_segment_metrics():

@@ -10,6 +10,7 @@
 | R006 | M2 | 雏形 | language-conditioned router（v1 → v2） | test | regime regret | MUST | DONE | v1 使用 text-template，结果明显弱于最佳固定；v2 在 GPU3/GPU2 复跑后，`avg_preference_score=0.876864`，已略优于最佳单一固定策略 `fixed_reserve=0.876931` |
 | R007 | M3 | ablation | 结构化数值路由器 | test | regime regret | MUST | DONE | GPU2 全量评测完成；当前结果劣于 heuristic，且未优于最佳固定权重 |
 | R008 | M3 | ablation | 无 router（固定权重） | test | regime regret | MUST | DONE | 由 `fixed_balanced` 和其他固定权重变体共同覆盖 |
-| R009 | M4 | 鲁棒性 | text router + deterministic fallback | shifted | validity / KPI | MUST | DONE | 已在 `text_v2` 上完成高频 corruption（every 12 steps）对照；当前 corruption 模式下有/无 fallback 差异很小，说明这一设定下 M4 结论仍偏弱 |
+| R009 | M4 | 鲁棒性 | text router + deterministic fallback | shifted | validity / KPI | MUST | DONE | 已从旧版 `extreme_peak` 周期注入升级到 `transition_wrong_expert` 协议；在 `text_best` 上完整验证后，fallback 能保护 `peak / ramping`，但会付出轻微 `cost / carbon` 代价 |
 | R010 | M5 | 扩展 | 最佳 router 在 OOD weather/price 下 | shifted | degradation | NICE | TODO | 仅在主结果成立后运行 |
 | R011 | M2+ | review-selected 改进 | text expert-selector router (`text_v4`) | test | regime regret | MUST | DONE | 基于 auto-review 选择的下一版；当前是已验证的最佳文本路由版本，并新增 `text_best` 别名固定这一状态 |
+| R012 | M2+ | 误差归因 | `text_best` segment-level gap analysis | test | per-regime delta / route stats | MUST | DONE | 已新增 `eval/analyze_preference_shift_gap.py`；当前结论是 `text_best` 相对 `v2` 的主要优势来自 `cost / carbon / peak` 三段，而剩余短板主要落在 `reserve` 与部分 `carbon` 区段 |

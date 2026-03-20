@@ -381,3 +381,185 @@ CUDA_VISIBLE_DEVICES=3 python eval/run_preference_shift.py \
    - regime transition guard
    - segment summary context
    这类更有证据支撑的方向推进。
+
+## 新一轮 M4：transition-aware corruption
+
+这轮没有继续沿用旧版 `extreme_peak` 周期注入，而是先做了一次显式 review，再把 `M4` 改成更贴近真实高层路由失效的协议。
+
+### reviewed 决策
+
+新增 review note：
+
+- `refine-logs/auto-review/2026-03-20-m4-next-step.md`
+
+核心结论是：
+
+> 不再用泛化的极端权重去破坏系统，而是模拟更像真实高层路由失败的情形，例如 regime 切换后的短时错误 expert 选择、`reserve` 段丢掉 reserve 约束等。
+
+### 这轮新增了什么
+
+1. 在 `eval/run_preference_shift.py` 里新增了两类 corruption：
+   - `wrong_expert`
+   - `transition_wrong_expert`
+2. 新增了 `--corruption_window`
+   - 用来指定 regime 切换后错误策略持续多少步
+3. 新增了一个分段误差归因脚本：
+   - `eval/analyze_preference_shift_gap.py`
+   - 输入：
+     - `--results_dir`
+     - `--summary_path`
+     - `--target_tag`
+     - `--compare_tags`
+   - 输出：
+     - 默认写到 `{results_dir}/{target_tag}_gap_analysis.json`
+4. 对应单测已补进 `tests/test_preference_shift.py`
+
+### GPU 使用
+
+- 小测试：`GPU 3`
+- 完整实验：`GPU 2`
+
+### GPU 3 sanity
+
+命令使用：
+
+```bash
+CUDA_VISIBLE_DEVICES=3 python eval/run_preference_shift.py \
+  --schema /cluster/home/user1/.cache/citylearn/v2.5.0/datasets/citylearn_challenge_2023_phase_1/schema.json \
+  --checkpoint artifacts/checkpoints/gru_mse_best.pt \
+  --norm_stats artifacts/norm_stats.npz \
+  --forecast_config configs/forecast.yaml \
+  --controller_config configs/controller.yaml \
+  --output_dir /tmp/pref_shift_transition_gpu3_sanity \
+  --tag sanity_text_best_transition_none_gpu3 \
+  --router_type text_best \
+  --forecast_mode learned \
+  --device cuda:0 \
+  --max_steps 120 \
+  --corruption_mode transition_wrong_expert \
+  --corruption_window 12 \
+  --route_fallback none
+```
+
+以及对应的 `heuristic fallback` 版本。
+
+sanity 结果确认了：
+
+- `transition_wrong_expert` 协议工作正常
+- `120` 步短程里共注入 `36` 次 corruption
+- fallback 版本 `36` 次 corruption 全部触发 heuristic fallback
+- 输出结构仍保持完整：
+  - `*_kpis.json`
+  - `*_segments.json`
+  - `*_routes.json`
+  - `*_actions.npy`
+
+### GPU 2 完整实验
+
+这轮完整对照跑的是：
+
+- `text_best_transition24_none`
+- `text_best_transition24_fallback`
+
+设置：
+
+- router：`text_best`
+- corruption mode：`transition_wrong_expert`
+- corruption window：`24`
+
+结果：
+
+| Run | cost | carbon | peak | ramping |
+|---|---:|---:|---:|---:|
+| clean text_best | 30.5693 | 468.3415 | 14.9948 | 858.7306 |
+| text_best_transition24_none | 30.5744 | 468.3799 | 15.0067 | 859.5113 |
+| text_best_transition24_fallback | 30.5785 | 468.4277 | 14.9948 | 858.9729 |
+
+补充统计：
+
+- 两组完整实验都注入了 `72` 次 corruption
+- fallback 版本中 `72` 次 corruption 全部触发 heuristic fallback
+
+### 这轮 M4 的解释
+
+和旧版 `extreme_peak` 协议相比，这轮终于出现了更可解释的保护模式：
+
+- **无 fallback**：
+  - `peak` 相比 clean baseline 恶化了 `+0.0119`
+  - `ramping` 恶化了 `+0.7807`
+- **有 heuristic fallback**：
+  - `peak` 回到了 clean baseline 水平
+  - `ramping` 只恶化 `+0.2423`
+
+代价是：
+
+- `cost` 与 `carbon` 相对 clean baseline 略有增加
+
+因此，这轮 `M4` 更准确的结论是：
+
+> 新的 transition-aware corruption 协议已经把 fallback 的作用从“几乎看不见”变成了“可解释的目标保护 tradeoff”：它确实在高层切换失效下保护了 `peak / ramping`，但会付出一些 `cost / carbon` 代价。
+
+这比旧版 `M4` 更强，因为它不再是“几乎没有差异”，而是出现了符合控制直觉的结构化差异。
+
+但它仍然不是最终结论，因为：
+
+- 差距还不算特别大
+- fallback 当前更像“保护 peak / smoothness”的策略，而不是全指标都更优
+
+因此当前最准确的状态是：
+
+> `M4` 已从“证据偏弱”推进到“已有可解释正信号，但还需要更强协议继续验证”。
+
+## `text_best` 的 segment-level 误差归因
+
+这轮还新增了：
+
+- `eval/analyze_preference_shift_gap.py`
+
+并对当前 clean best run 做了归因，输出文件为：
+
+- `/tmp/pref_shift_gpu2/text_router_v4_gap_analysis.json`
+
+### 归因结论 1：`text_best` 相比 `v2` 的优势主要来自前三段
+
+相对 `text_router_v2`，`text_best` 的平均优势是：
+
+- `avg_score_delta_vs_target = 0.000242`
+
+拆开看：
+
+- `cost` 段：`text_best` 更好
+- `carbon` 段：`text_best` 更好
+- `peak` 段：`text_best` 略好
+- `reserve` 段：`v2` 仍更好
+
+也就是说：
+
+> `text_best` 之所以整体优于 `v2`，并不是因为它把每一段都做对了，而是它在 `cost / carbon / peak` 三段累计赢得更多，而 `reserve` 仍然是当前最明显的局部短板。
+
+### 归因结论 2：`text_best` 相比 `fixed_reserve` 的剩余差距并不均匀
+
+相对 `fixed_reserve`，`text_best`：
+
+- 在 `cost` 段更好
+- 在 `peak` 段更好
+- 在 `reserve` 段更好
+- 但在 `carbon` 段更差
+
+这说明当前 `text_best` 离 regime-wise best fixed 上界的剩余差距，不是“四段都差一点”，而更像：
+
+> `reserve` 还没有完全稳定，`carbon` 段的 expert mapping / blending 也还存在结构性可改空间。
+
+### 这对下一步 `v5` 的含义
+
+这轮归因进一步说明：
+
+- 不应该回到自由生成连续权重
+- 下一版如果要做，应该围绕：
+  - `reserve` 段保护
+  - `carbon` 段 expert 选择
+  - regime transition guard / persistence
+
+也就是说，下一步不该是“更会读文本”，而应是：
+
+> 更好地在 regime 切换和局部短板上做 expert persistence 与 switching control。

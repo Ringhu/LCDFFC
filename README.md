@@ -4,7 +4,7 @@
 
 本项目面向 **CityLearn Challenge 2023**，目标是实现一个最小可行的 **forecast-then-control** 闭环系统：
 
-1. 用历史观测训练 forecasting backbone（当前已接入 `GRU / TSMixer / PatchTST`）。
+1. 用历史观测训练 forecasting backbone（当前已接入 `GRU / TSMixer / PatchTST / Transformer / Granite-PatchTST-init`）。
 2. 用固定权重 QP 控制器生成电池动作。
 3. 在 `central_agent=True`、battery-only 设定下与 `RBC` 基线对比。
 
@@ -17,7 +17,7 @@
 
 - `data/prepare_citylearn.py`：从 CityLearn 提取原始时序并生成 `forecast_data.npz`
 - `data/dataset.py`：滑动窗口数据集与标准化统计
-- `scripts/train_forecaster.py`：统一 forecasting backbone 训练入口（支持 `GRU / TSMixer / PatchTST`）
+- `scripts/train_forecaster.py`：统一 forecasting backbone 训练入口（支持 `GRU / TSMixer / PatchTST / Transformer / Granite-PatchTST-init`）
 - `controllers/qp_controller.py`：固定权重 QP 控制器
 - `controllers/safe_fallback.py`：零动作回退
 - `eval/run_rbc.py`：基线评估
@@ -38,7 +38,7 @@
 第一阶段当前真实闭环：
 
 ```text
-CityLearn observation -> GRU forecaster -> QP controller -> CityLearn env
+CityLearn observation -> forecasting backbone -> QP controller -> CityLearn env
 ```
 
 完整研究路线仍然是：
@@ -68,8 +68,8 @@ python data/prepare_citylearn.py \
   --schema citylearn_challenge_2023_phase_1 \
   --output_dir artifacts/
 
-# 3. 训练 GRU 预测器
-python scripts/train_gru.py \
+# 3. 训练 forecasting backbone
+python scripts/train_forecaster.py \
   --config configs/forecast.yaml \
   --data_path artifacts/forecast_data.npz \
   --device cpu

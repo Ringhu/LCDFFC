@@ -129,6 +129,8 @@
 - `prompt_templates.py`、`json_schema.py`、`generate_instruction_data.py` 已有
 - `LLMRouter.route()` 已实现最小 prompt-only 版本，并已在 event-driven 协议下跑通完整实验
 - deterministic fallback 尚未补齐
+- Round 4 已补 `Transformer` 与 `Granite PatchTST init` 两类 backbone；当前 strongest low-level setting 已从 `GRU` 转为 `Granite + QP`
+- event-driven 主协议下的 high-level 排序在不同 backbone 之间仍不稳定，因此下一轮不应直接扩写高层主张，而应先进入 controller baseline round
 
 ---
 

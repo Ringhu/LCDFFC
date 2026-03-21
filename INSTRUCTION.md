@@ -217,3 +217,18 @@
 - 当前最强 foundation backbone 是 `Moirai2`，`TimesFM 2.5` 次之
 - `Moirai2 + QP` 在 `cost / carbon / ramping` 上优于当前 `Granite + QP`，但 `Granite + QP` 仍在 `peak` 上更强
 - 下一步不应继续盲扩 backbone，而应进入 `controller baseline + objective trade-off` round
+
+### Round 7：Controller Baseline 诊断（已完成）
+
+**当前状态补充**：
+
+- 已完成 reviewed controller-diagnosis round，固定 `moirai2 / timesfm2.5`，比较 `zero_action / qp_current / qp_carbon / forecast_heuristic / action_grid`
+- 结果表明：`QP` 不是当前 low-level 的主要短板；两条 backbone 上都是 `qp_carbon >= qp_current >> action_grid > zero_action > forecast_heuristic`
+- `qp_carbon` 稳定优于 `qp_current`，说明当前主链路里未来 `carbon` 信号缺失是一个真实但量级有限的问题
+- 非 QP controller family 没有打败 `QP`，因此下一步不应继续堆更多弱 controller，而应进入 `objective trade-off` 与 corrected-`QP` 固化阶段
+
+**下一步建议**：
+
+1. 固定 `qp_carbon` 为后续 low-level controller 诊断路径
+2. 分析 `Granite + QP` 与 `Moirai2 / TimesFM + qp_carbon` 的 trade-off 边界
+3. 再决定是否需要更强 controller family（例如更完整的 MPC），而不是先继续堆 heuristic baseline

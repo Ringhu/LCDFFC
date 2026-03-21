@@ -29,3 +29,7 @@
 
 | R023 | M1+++ | foundation models | `Chronos-2 / Moirai2 / TimesFM 2.5 / MOMENT` zero-shot rolling forecast | test | raw-scale MSE / MAE / latency | MUST | DONE | 已完成 reviewed foundation-model round；四者都已按官方或最接近官方路径跑通，其中 `Moirai2` rolling forecast 最好，`TimesFM 2.5` 次之，`Chronos-2` 再次，`MOMENT` 最弱且官方 warning 指出 forecasting head 需 fine-tune |
 | R024 | M1+++ | foundation models | `foundation forecast + QP` downstream control | test | cost / carbon / peak / ramping | MUST | DONE | 已完成四个 foundation family 的下游控制比较；`Moirai2 + QP` 最强，`TimesFM 2.5 + QP` 次之，二者都明显优于 `Chronos-2 / MOMENT`，并在 `cost / carbon / ramping` 上优于当前 `Granite + QP` |
+
+
+| R025 | M1+++ | reviewed diagnosis | controller-family review for foundation forecast + control mismatch | test | methodology sanity / experiment validity | MUST | DONE | 已完成本轮 reviewed 设计；明确区分了 `QP family` 问题与 `QP` 输入信号缺失问题，并固定比较 `zero_action / qp_current / qp_carbon / forecast_heuristic / action_grid` |
+| R026 | M1+++ | controller diagnosis | `Moirai2 / TimesFM 2.5` + multi-controller comparison | test | cost / carbon / peak / ramping | MUST | DONE | full corrected matrix 已完成；`qp_carbon` 在两条 backbone 上都稳定优于 `qp_current`，但非 QP controller 未超过 `QP`，说明当前主要不是 `QP family` 问题，而是 objective / trade-off / signal mismatch |

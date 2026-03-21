@@ -19,11 +19,13 @@
 - `data/dataset.py`：滑动窗口数据集与标准化统计
 - `scripts/train_forecaster.py`：统一 forecasting backbone 训练入口（支持 `GRU / TSMixer / PatchTST / Transformer / Granite-PatchTST-init`）
 - `controllers/qp_controller.py`：固定权重 QP 控制器
+- `controllers/baseline_controllers.py`：forecast-aware heuristic 与 action-grid controller baseline
 - `controllers/safe_fallback.py`：零动作回退
 - `eval/run_rbc.py`：基线评估
 - `eval/run_controller.py`：forecast + QP 端到端评估
 - `scripts/eval_foundation_models.py`：foundation model zero-shot rolling forecast 评测
 - `eval/run_foundation_control.py`：foundation forecast + QP 下游控制评测
+- `eval/run_foundation_controller_compare.py`：在同一 foundation forecast 下比较 `zero_action / qp_current / qp_carbon / forecast_heuristic / action_grid`
 - `eval/run_all.py`：结果聚合
 - `eval/run_controller.py --forecast_mode {learned,oracle,myopic}`：第一阶段诊断模式
 
@@ -119,6 +121,19 @@ python eval/run_controller.py \
   --device cpu
 ```
 
+# 8. 比较同一 foundation forecast 下的多个 controller family
+python eval/run_foundation_controller_compare.py \
+  --schema citylearn_challenge_2023_phase_1 \
+  --foundation_model moirai2 \
+  --controller_type qp_carbon \
+  --controller_config configs/controller.yaml \
+  --output_dir reports/foundation_controller_compare/ \
+  --tag moirai2_qp_carbon \
+  --device cuda:0 \
+  --context_length 512 \
+  --horizon 24
+```
+
 ## 目录结构
 
 ```text
@@ -148,6 +163,7 @@ LCDFFC/
 - 因此现在更合理的结论不是“oracle 索引有 bug”，而是当前 oracle target 与控制目标之间仍有结构失配；新增的权重覆盖 CLI 适合做小规模 sweep，但不能把 oracle 结果直接当成上界
 - 当前环境可能缺少 `cvxpy`，导致 `tests/test_qp.py` 无法直接运行
 - 文档和代码曾发生过漂移，当前以 `AGENTS.md` 为主工作约定
+- Round 7 的 controller baseline 结果表明：`QP` 不是当前 low-level 的主要短板；真正需要修正的是 `carbon` 预测信号输入，以及后续对 objective trade-off 的进一步分析
 
 ## 许可证
 

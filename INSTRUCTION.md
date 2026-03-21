@@ -207,3 +207,13 @@
 3. **为什么 LLM 是 prompt-only？**
    - 快速验证 LLM 作为偏好接口的可行性
    - LoRA 微调是增量改进，不影响架构设计
+
+
+### Round 6：Foundation Model 扩展（已完成）
+
+**当前状态补充**：
+
+- 已完成 `Moirai2 / Chronos-2 / TimesFM 2.5 / MOMENT` 的 reviewed official-use round
+- 当前最强 foundation backbone 是 `Moirai2`，`TimesFM 2.5` 次之
+- `Moirai2 + QP` 在 `cost / carbon / ramping` 上优于当前 `Granite + QP`，但 `Granite + QP` 仍在 `peak` 上更强
+- 下一步不应继续盲扩 backbone，而应进入 `controller baseline + objective trade-off` round

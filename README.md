@@ -22,6 +22,8 @@
 - `controllers/safe_fallback.py`：零动作回退
 - `eval/run_rbc.py`：基线评估
 - `eval/run_controller.py`：forecast + QP 端到端评估
+- `scripts/eval_foundation_models.py`：foundation model zero-shot rolling forecast 评测
+- `eval/run_foundation_control.py`：foundation forecast + QP 下游控制评测
 - `eval/run_all.py`：结果聚合
 - `eval/run_controller.py --forecast_mode {learned,oracle,myopic}`：第一阶段诊断模式
 

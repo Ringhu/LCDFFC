@@ -1,48 +1,48 @@
-# Review Summary
+# 评审摘要
 
-## Initial Question
+## 初始问题
 
-Is the current LCDFFC research idea mature, feasible, and novel enough for a strong CCF-A style paper?
+当前 LCDFFC 的研究想法是否已经足够成熟、足够可行，并且具有足够的 novelty，能够支撑一篇较强的 CCF-A 风格论文？
 
-## Short Answer
+## 简短回答
 
-- **Engineering maturity**: yes, the project now has a credible base system.
-- **Paper maturity**: not yet, in its current broad form.
-- **Feasibility**: yes, if the scope is narrowed.
-- **Novelty**: insufficient as currently implemented; potentially sufficient after refocusing.
+- **工程成熟度**：是，当前项目已经有一个可信的基础系统
+- **论文成熟度**：还没有，在当前 broad form 下还不够收敛
+- **可行性**：有，只要范围进一步缩小
+- **novelty**：按当前已实现内容来看不够；收缩后有潜力
 
-## Main Criticisms
+## 主要批评点
 
-1. The current idea is too broad and mixes several potential papers.
-2. The implemented `forecast + QP` result is useful but not novel enough by itself.
-3. The LLM role is sensible but still under-specified as a research contribution.
-4. Validation does not yet isolate what the claimed novelty actually is.
-5. The project risks becoming a roadmap instead of a paper.
+1. 当前想法太宽，混合了多个潜在论文方向
+2. 已实现的 `forecast + QP` 虽然有价值，但本身 novelty 不足
+3. LLM 的角色方向是对的，但还没有清晰到能成为论文主贡献
+4. 当前评估还不能很好隔离“这篇论文真正的主张”
+5. 项目现在更像路线图，而不像论文
 
-## What Was Preserved
+## 本次保留了什么
 
-- The original problem anchor was preserved.
-- The low-level `forecast + QP` loop remains the base system.
-- The LLM is still placed at the high-level objective/constraint layer, not as a direct action model.
+- 原始问题锚点被保留了
+- 低层 `forecast + QP` 主循环继续作为基础系统存在
+- LLM 仍然放在高层目标 / 约束路由层，而不是低层直接动作层
 
-## What Was Rejected
+## 本次明确拒绝了什么
 
-- Making uncertainty, decision-focused learning, LLM routing, and second-benchmark transfer all co-equal contributions in one paper.
-- Treating the currently implemented fixed-weight loop as the final novelty claim.
-- Framing the paper as generic “LLM for energy control.”
+- 把 uncertainty、decision-focused learning、LLM routing、第二 benchmark 迁移同时做成一篇论文的并列贡献
+- 把当前固定权重闭环本身当成最终 novelty
+- 把整篇论文写成泛化的“LLM for energy control”
 
-## Refined Thesis
+## 收缩后的主张
 
-The paper should focus on:
+论文应该集中在：
 
-> language-conditioned dynamic objective routing for forecast-then-control under shifting operator preferences.
+> 面向偏好变化场景的、语言条件化的 forecast-then-control 高层目标路由
 
-## Consequence of This Refinement
+## 这次收缩带来的变化
 
-- The low-level controller becomes infrastructure.
-- The high-level routing mechanism becomes the dominant contribution.
-- Decision-focused learning and uncertainty remain optional future or appendix extensions.
+- 低层控制器从“主贡献”变成“基础设施”
+- 高层路由机制变成主贡献
+- decision-focused learning 和 uncertainty 降级为可选后续工作或 appendix 层扩展
 
-## Current Recommendation
+## 当前建议
 
-Proceed with the refined proposal, not the broad roadmap.
+下一步应该沿收缩后的方案推进，而不是继续保持 broad roadmap 结构。

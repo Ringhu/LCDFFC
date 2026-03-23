@@ -1,66 +1,66 @@
-# Refinement Report
+# 收缩报告
 
-**Date**: 2026-03-19  
-**Initial Verdict**: `REVISE`  
-**Final Verdict**: `REVISE, BUT CLEARLY ACTIONABLE`
+**日期**：2026-03-19  
+**初始结论**：`REVISE`  
+**当前结论**：`REVISE，但已经具备明确下一步`
 
-## What Changed During Refinement
+## 这轮收缩到底改了什么
 
-### Before
+### 收缩前
 
-The project narrative implicitly tried to combine:
+项目叙事里隐含地想同时做：
 
-- fixed-weight forecast + QP
+- 固定权重 `forecast + QP`
 - uncertainty-aware fallback
 - decision-focused learning
 - LLM preference routing
-- optional Grid2Op transfer
+- 可选的 Grid2Op 第二 benchmark
 
-This was a reasonable research roadmap but a weak single-paper thesis.
+这更像一条完整研究路线图，而不是一篇论文的 thesis。
 
-### After
+### 收缩后
 
-The refined paper story became:
+收缩后的论文叙事变成：
 
-> Keep the low-level forecast + QP controller fixed, and make the paper about high-level language-conditioned objective adaptation.
+> 保持低层 `forecast + QP` 控制器不变，把论文主张集中到“高层语言条件化目标适配”。
 
-## Why This Is Better
+## 为什么这个版本更好
 
-1. It gives the paper one dominant contribution.
-2. It reuses the strongest verified engineering asset in the repo.
-3. It places the LLM in the most defensible role.
-4. It creates a clean novelty-isolation experiment.
+1. 它给了论文一个唯一主贡献
+2. 它复用了当前 repo 里已经验证过的最强工程资产
+3. 它把 LLM 放在最容易被接受的位置
+4. 它自然形成了一个清晰的 novelty-isolation 实验设计
 
-## Claims Matrix
+## 主张矩阵
 
-| Outcome | Allowed Claim |
+| 结果 | 允许主张 |
 |---|---|
-| LLM router beats fixed weights and simpler routers under preference shifts | Strong claim: language-conditioned objective routing improves adaptive control without retraining |
-| LLM router ties a non-language structured router | Downgraded claim: preference-conditioned routing matters, but language itself is not necessary |
-| LLM router loses to a simple rule router | No strong language claim; paper should pivot away from LLM novelty |
-| Fixed low-level loop remains strong while router helps only under shifts | Good focused paper story |
-| Router hurts core KPI even under the right preference | Thesis needs rethink or scope reduction |
+| LLM router 在偏好切换场景中优于固定权重与简单路由 | 强主张：语言条件化目标路由提升了适应性控制能力 |
+| LLM router 与非语言结构化路由打平 | 主张降级：偏好条件化路由有效，但语言本身不是必要条件 |
+| LLM router 输给简单规则路由 | 不能继续主打 LLM novelty，论文需要转向 |
+| 低层主循环稳定，router 在偏好切换下提供增益 | 这是较好的论文形态 |
+| router 在正确偏好下也伤害主 KPI | 说明当前 thesis 需要重新思考或进一步缩小 |
 
-## Current Risk Register
+## 当前风险列表
 
-### Risk 1
-The language layer is unnecessary.
+### 风险 1：语言层根本没有必要
 
-- Mitigation:
-  include a structured non-language router baseline and a rule-based router.
+- 应对方式：
+  必须加入非语言结构化路由 baseline，以及 rule-based router baseline。
 
-### Risk 2
-The preference-shift task looks synthetic.
+### 风险 2：偏好切换任务太人工
 
-- Mitigation:
-  design preference schedules tied to realistic operator scenarios such as price spikes, carbon alerts, and grid stress windows.
+- 应对方式：
+  让 preference schedule 绑定到更真实的运行语境，例如价格突变、碳强度告警、grid stress 时段。
 
-### Risk 3
-The paper overclaims generality from one environment.
+### 风险 3：论文从单一环境过度外推
 
-- Mitigation:
-  keep the main claim tied to exogenous sequential control with CityLearn as the anchor; treat Grid2Op as optional later validation.
+- 应对方式：
+  主论文先把 claim 锚定在 CityLearn 这个外生时序控制环境上，Grid2Op 只作为后续验证，不强行一起塞进来。
 
-## Bottom-Line Recommendation
+## 最终建议
 
-The project should move forward under the refined thesis. The right next step is not more architecture. The right next step is a clean experiment package that tests whether language-conditioned routing is truly necessary and valuable.
+当前项目应当沿收缩后的 thesis 继续推进。  
+最重要的下一步不是继续加架构，而是做一组干净的实验，去回答：
+
+> 语言条件化路由到底是不是必要且有价值的？

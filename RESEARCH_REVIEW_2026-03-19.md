@@ -1,171 +1,176 @@
-# Research Review (2026-03-19)
+# 研究评审报告（2026-03-19）
 
-## Scope
+## 评审范围
 
-This document records a full local run of the requested research review and refinement pipeline for the current LCDFFC project.
+本文档记录了针对当前 LCDFFC 项目所做的一次完整本地研究评审与方案收缩流程。
 
-## What Was Reviewed
+## 本次评审看了什么
 
-### Project reality
+### 1. 项目当前真实状态
 
-- Working base system:
-  GRU forecaster + QP controller + CityLearn evaluation
-- Current repo scope:
-  future plans for uncertainty, decision-focused learning, and LLM routing
-- Current validated result:
-  learned `forecast + QP` beats RBC in the local validated setting
+- 当前已经跑通的主闭环：
+  `GRU` 预测器 + `QP` 控制器 + `CityLearn` 评估
+- 当前仓库中明确规划但尚未闭环的方向：
+  uncertainty、decision-focused learning、LLM router
+- 当前已验证的关键结果：
+  在本地验证设置下，`learned forecast + QP` 已优于 `RBC`
 
-### Narrative documents
+### 2. 项目叙事文档
 
 - `AGENTS.md`
 - `README.md`
 - `INSTRUCTION.md`
 - `CLAUDE.md`
 - `chat.md`
-- relevant docs under `docs/`
+- `docs/` 下相关说明文档
 
-### Related-work reference points
+### 3. 相关工作参照系
 
-This review also checked the broad neighborhood of:
+本次评审还对照了以下几类最相关的工作方向：
 
-- CityLearn / building energy control benchmark work
-- decision-focused learning for control-relevant prediction
-- LLM-assisted control / optimization / high-level routing
-- recent building-energy LLM papers
+- CityLearn / 建筑能源控制 benchmark 工作
+- 决策导向预测与 decision-focused learning
+- LLM 辅助控制 / 优化 / 高层目标路由
+- 近期 building-energy 与 LLM 相关论文
 
-Representative references used for the novelty check:
+用于 novelty 判断的代表性参考包括：
 
-- CityLearn environment overview: https://pypi.org/project/citylearn/
-- CityLearn challenge winning optimization-style policy: https://jinming.tech/papers/2023-aaai-citylearn-winning-solution.html
-- Hierarchical RL-MPC on CityLearn-like cluster control: https://doi.org/10.1016/j.enbuild.2025.116879
-- LLM-based interpretable building control: https://dblp.org/rec/journals/corr/abs-2402-09584
-- Decision-focused energy management with robust optimization: https://doi.org/10.1016/j.apenergy.2025.127343
-- Decision-focused optimal PV-battery scheduling: https://doi.org/10.1016/j.est.2026.121152
+- CityLearn 环境概览：https://pypi.org/project/citylearn/
+- CityLearn challenge 获胜优化式策略：https://jinming.tech/papers/2023-aaai-citylearn-winning-solution.html
+- 类 CityLearn 场景下的层次化 RL-MPC：https://doi.org/10.1016/j.enbuild.2025.116879
+- 基于 LLM 的可解释建筑控制：https://dblp.org/rec/journals/corr/abs-2402-09584
+- 面向能量管理的 decision-focused 鲁棒优化：https://doi.org/10.1016/j.apenergy.2025.127343
+- 面向光伏-储能调度的 decision-focused 方法：https://doi.org/10.1016/j.est.2026.121152
 
-## Round-by-Round Summary
+## 分轮次评审摘要
 
-### Round 0: Broad-Idea Assessment
+### Round 0：对当前 broad idea 的初判
 
-The project currently combines several interesting directions:
+当前项目把多条看起来都合理的研究线放在了一起：
 
-- forecast + QP
+- `forecast + QP`
 - uncertainty-aware control
 - decision-focused training
 - LLM preference routing
-- optional second benchmark transfer
+- 可选的第二 benchmark 迁移
 
-Assessment:
+判断：
 
-- good roadmap
-- weak single-paper thesis
+- 作为研究路线图，这是合理的
+- 作为单篇论文的 thesis，这还不够集中
 
-### Round 1: Critical Review
+### Round 1：批判性评审
 
-Main criticisms:
+主要批评点如下：
 
-1. no dominant contribution yet
-2. current implemented novelty is not enough by itself
-3. the LLM role is plausible but under-specified
-4. the evaluation story does not isolate the paper claim
+1. 当前还没有一个唯一的主贡献
+2. 当前已经实现的部分本身 novelty 不足
+3. LLM 的角色方向是对的，但还没有收缩成一个足够锋利的论文主张
+4. 当前评估还不能充分隔离“这篇论文真正的贡献是什么”
 
-Verdict:
+结论：
 
 `REVISE`
 
-### Round 1: Refinement
+### Round 1：方案收缩
 
-The paper was narrowed to:
+最终把论文主线收缩为：
 
-> language-conditioned dynamic objective routing for forecast-then-control under preference shifts
+> 面向偏好变化场景的、语言条件化的 forecast-then-control 高层目标路由
 
-This preserves the original problem while avoiding contribution sprawl.
+这个版本保留了原来的问题本身，但避免了贡献发散。
 
-## Final Consensus
+## 最终共识
 
-### Is the current engineering mature?
+### 1. 当前工程成熟度够不够？
 
-Yes, for a first serious research substrate.
+够，至少已经达到了“可以支撑一篇认真方法论文”的程度。
 
-The repo is no longer just a skeleton. It has:
+仓库现在已经不再只是脚手架，而是具备：
 
-- a functioning data extraction path
-- a functioning forecast model
-- a functioning optimization controller
-- end-to-end evaluation
-- a validated result that beats RBC in the current local setting
+- 可运行的数据提取路径
+- 可运行的预测模型
+- 可运行的优化控制器
+- 可运行的端到端评估链路
+- 一个已经通过本地验证的、优于 `RBC` 的主闭环结果
 
-### Is the current paper idea mature?
+### 2. 当前论文想法成熟了吗？
 
-Not yet, if you keep the whole roadmap in one paper.
+还没有，如果你继续把整条路线图塞进同一篇论文里。
 
-The broad idea is still too wide and reads as multiple papers forced into one.
+当前 broad idea 还是太宽了，更像“多个论文方向并行”，不像“一个顶会论文主张”。
 
-### Is it feasible?
+### 3. 当前方案可行吗？
 
-Yes.
+可行。
 
-The refined version is especially feasible because it builds directly on the existing validated low-level stack instead of replacing it.
+而且收缩后的版本尤其可行，因为它是直接建立在当前已经跑通并验证过的低层 `forecast + QP` 主循环上，而不是推翻重来。
 
-### Is it novel enough?
+### 4. 当前方案足够 novel 吗？
 
-Two answers are needed here:
+这里需要分两层回答：
 
-1. **Current implemented system alone**:
-   no, not enough novelty for a strong CCF-A venue.
-2. **Refined proposal**:
-   potentially yes, but only if the paper sharply focuses on language-conditioned online objective adaptation and proves that the language layer is not decorative.
+1. **只看当前已实现系统本身**：
+   不够。  
+   单独的 `GRU + QP + CityLearn` 更像扎实工程结果，不够支撑强 CCF-A novelty。
 
-## Results-to-Claims Matrix
+2. **看收缩后的 refined proposal**：
+   有希望，但前提是你必须把论文明确聚焦到：
+   **“语言条件化的在线目标适配”**
+   并且证明语言层不是装饰件，而是确实带来了固定权重或简单路由做不到的能力。
 
-| Experimental outcome | Allowed claim |
+## 结果—主张矩阵
+
+| 实验结果 | 允许主张 |
 |---|---|
-| Language router clearly beats fixed weights and simple routers under preference shifts | Strong paper claim survives |
-| Language router ties numeric preference router | Claim must be downgraded to preference-conditioned routing |
-| Language router loses to heuristic router | LLM novelty does not survive |
-| Fixed low-level loop stays strong, router adds adaptive value | Good final story |
-| Router breaks robustness or feasibility | Keep LLM part as future work |
+| 语言路由在偏好切换场景中明显优于固定权重和简单路由 | 强论文主张成立 |
+| 语言路由与数值偏好向量路由打平 | 主张必须降级为“偏好条件化路由”，不能再强调语言必要性 |
+| 语言路由输给简单 heuristic router | LLM novelty 不成立 |
+| 固定低层闭环保持稳定，路由层额外带来适应性收益 | 这是最好的论文形态 |
+| 路由层破坏了鲁棒性或可行性 | LLM 部分应退回 future work 或缩弱主张 |
 
-## Prioritized TODO List
+## 优先级最高的 TODO
 
-1. Freeze the current validated low-level `forecast + QP` loop as the base platform.
-2. Define realistic preference-shift evaluation regimes.
-3. Implement a minimal heuristic router.
-4. Implement a minimal language-conditioned router.
-5. Compare against fixed weights and non-language structured baselines.
-6. Only after novelty isolation succeeds, decide whether uncertainty or DFL belong in the same paper.
+1. 把当前已验证的低层 `forecast + QP` 主循环冻结为基础平台
+2. 设计真实且可信的 `preference-shift` 评测协议
+3. 先实现一个最小 heuristic router
+4. 再实现一个最小 language-conditioned router
+5. 与固定权重、非语言结构化路由做正面对照
+6. 只有在 novelty 隔离成功后，再决定 uncertainty 或 DFL 是否应该进入同一篇论文
 
-## Rough Compute and Execution View
+## 粗略的计算与执行判断
 
-- Base loop already runs locally and is practical.
-- The refined router study should be moderate-cost if the low-level stack stays frozen.
-- The highest risk is not compute. It is evaluation design and claim isolation.
+- 当前 base loop 已经能稳定本地运行
+- 如果低层主循环保持冻结，router 层实验的成本不会太高
+- 当前最大的风险不是算力，而是：
+  **评测协议设计得不够干净，导致主张无法被 reviewer 接受**
 
-## Paper Outline Suggestion
+## 建议的论文结构
 
 1. Introduction
-   - exogenous sequential control
-   - fixed-objective controller limitation
-   - language-conditioned objective adaptation
+   - 外生时序驱动控制
+   - 固定目标控制器的局限
+   - 语言条件化目标适配
 2. Problem Setting
-   - CityLearn multi-objective battery control
-   - preference-shift setting
+   - CityLearn 多目标电池控制
+   - preference-shift 场景
 3. Method
-   - fixed low-level forecast + control
-   - high-level language-conditioned router
-   - structured fallback
+   - 固定低层 `forecast + control`
+   - 高层语言条件路由器
+   - 结构化 fallback
 4. Experiments
-   - main anchor result
+   - 主结果
    - novelty isolation
    - simplicity / necessity check
    - robustness
 5. Discussion
-   - when language is necessary
-   - when simpler routing is enough
+   - 语言什么时候必要
+   - 简单路由什么时候已经够用
 
-## Final Bottom-Line Judgment
+## 最终底线判断
 
-- **Idea maturity today**: medium
-- **Engineering maturity today**: medium-high
-- **Feasibility**: high
-- **Novelty today**: insufficient as implemented, potentially sufficient after focus
-- **Best next step**: execute the refined experiment plan, not more architecture expansion
+- **当前 idea 成熟度**：中等
+- **当前工程成熟度**：中高
+- **当前可行性**：高
+- **当前 novelty**：按已实现内容看不够；按收缩后的论文主线看，有潜力
+- **最合理的下一步**：执行 refined experiment plan，而不是继续扩架构

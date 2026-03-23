@@ -1,193 +1,202 @@
-# Experiment Plan
+# 实验计划
 
-**Problem**: Fixed-objective forecast-control does not adapt cleanly when operator preferences shift between cost, carbon, peak shaving, and resilience.  
-**Method Thesis**: Use a language-conditioned router to change QP objectives/constraints online while keeping the low-level forecast + controller fixed.  
-**Date**: 2026-03-19
+**问题**：固定目标的 `forecast-control` 系统在运营者偏好从成本、碳排、削峰、韧性之间切换时，无法自然适配。  
+**方法主张**：使用语言条件化路由器，在不改变低层预测与控制主循环的前提下，在线修改 `QP` 的目标与约束。  
+**日期**：2026-03-19
 
-## Claim Map
+## 主张映射
 
-| Claim | Why It Matters | Minimum Convincing Evidence | Linked Blocks |
+| 主张 | 为什么重要 | 最小可信证据 | 对应实验块 |
 |---|---|---|---|
-| C1: Dynamic objective adaptation without retraining | This is the actual paper thesis | Better KPI tradeoff than fixed weights under preference-shift episodes | B1 |
-| C2: Language is justified, not decorative | Prevents novelty collapse | LLM/text router beats or generalizes better than simpler structured alternatives | B2, B3 |
+| C1：不重训也能动态适配目标 | 这是整篇论文的核心 | 在偏好切换 episode 中，优于固定权重系统 | B1 |
+| C2：语言不是装饰，而是有必要或至少有独特价值 | 防止 novelty 失效 | 文本路由优于或泛化强于更简单的结构化替代方案 | B2, B3 |
 
-## Paper Storyline
+## 论文实验主线
 
-- Main paper must prove:
-  - adaptation to changing objectives without low-level retraining
-  - necessity or meaningful utility of language-conditioned routing
-- Appendix can support:
-  - fallback details
-  - extra robustness plots
-  - optional cross-seed analyses
-- Experiments intentionally cut:
-  - full DFL paper
-  - full uncertainty ensemble paper
-  - full Grid2Op transfer story
+- 主论文必须证明：
+  - 在低层不重训的情况下，可以适配变化中的高层目标
+  - 语言条件化路由确实有意义，而不是装饰件
+- Appendix 可支持：
+  - fallback 细节
+  - 更多鲁棒性图
+  - 附加随机种子分析
+- 明确不放进主论文的：
+  - 完整 DFL 论文
+  - 完整 uncertainty ensemble 论文
+  - 完整 Grid2Op 迁移论文
 
-## Experiment Blocks
+## 实验块
 
-### Block 1: Main Anchor Result — Preference-Shift Evaluation
-- Claim tested:
-  C1
-- Why this block exists:
-  The paper lives or dies on whether the same low-level controller can adapt online to different preferences.
-- Dataset / split / task:
-  CityLearn 2023 Phase 1, with scripted preference regimes over a single episode or multiple held-out episodes.
-- Compared systems:
-  - fixed-weight learned forecast + QP
-  - fixed-weight hand-tuned variants for each objective emphasis
+### Block 1：主结果 —— 偏好切换评测
+
+- **测试主张**：
+  `C1`
+- **为什么必须做**：
+  这篇论文最核心的问题，就是同一个低层控制器能不能在不同偏好下在线适配。
+- **数据 / 任务**：
+  `CityLearn 2023 Phase 1`，在单个 episode 或多组 held-out episode 中设计 preference regime 切换。
+- **比较对象**：
+  - 固定权重 `learned forecast + QP`
+  - 面向不同目标手工调好的固定权重变体
   - heuristic rule router
-  - refined language-conditioned router
-- Metrics:
-  - preference-matched KPI score
-  - regret to best fixed controller for that regime
-  - switch adaptation lag
-- Setup details:
-  Keep the low-level forecaster and QP fixed. Only route weights/constraints.
-- Success criterion:
-  Router matches or beats fixed controllers under changing regimes without retraining.
-- Failure interpretation:
-  The claimed adaptation advantage is weak or absent.
-- Table / figure target:
-  Main table + regime-shift figure.
-- Priority:
-  MUST-RUN
+  - 语言条件化 router
+- **指标**：
+  - preference-matched KPI 分数
+  - 相对最佳固定控制器的 regret
+  - 偏好切换后的适配延迟
+- **设置细节**：
+  冻结低层 forecaster 与 QP，只让高层输出 `weights / constraints`
+- **成功标准**：
+  在偏好切换场景下，不重训也能达到或超过固定权重方法
+- **失败解释**：
+  说明当前方法没有真正带来“动态适配”优势
+- **论文位置**：
+  主表 + regime shift 图
+- **优先级**：
+  `MUST-RUN`
 
-### Block 2: Novelty Isolation — Language vs Structured Preference Router
-- Claim tested:
-  C2
-- Why this block exists:
-  Without this, reviewers can say language is just decoration.
-- Dataset / split / task:
-  Same preference-shift task as Block 1.
-- Compared systems:
-  - text-conditioned router
-  - numeric preference-vector router
-  - rule-based router
-- Metrics:
+### Block 2：novelty 隔离 —— 语言 vs 结构化偏好路由
+
+- **测试主张**：
+  `C2`
+- **为什么必须做**：
+  不做这个，reviewer 会直接说语言层只是装饰。
+- **数据 / 任务**：
+  与 Block 1 相同
+- **比较对象**：
+  - 文本条件路由
+  - 数值偏好向量路由
+  - 规则式路由
+- **指标**：
   - KPI regret
-  - generalization to unseen or compositional preference prompts
-- Setup details:
-  Match low-level controller and evaluation schedule exactly.
-- Success criterion:
-  Language-conditioned routing provides either better generalization or meaningfully lower manual engineering burden with no control penalty.
-- Failure interpretation:
-  Downgrade the claim to generic preference-conditioned routing.
-- Table / figure target:
-  Main ablation table.
-- Priority:
-  MUST-RUN
+  - 对未见组合偏好 / 组合式提示词的泛化
+- **设置细节**：
+  低层控制器与评测 protocol 完全一致
+- **成功标准**：
+  文本路由在泛化能力或工程表达能力上明显更优，且不损害控制质量
+- **失败解释**：
+  论文主张必须降级为“偏好条件化路由”，不能再强调语言必要性
+- **论文位置**：
+  主体 ablation 表
+- **优先级**：
+  `MUST-RUN`
 
-### Block 3: Simplicity / Deletion Check
-- Claim tested:
-  The method is elegant and not overbuilt.
-- Why this block exists:
-  Reviewers will ask whether a much simpler router is enough.
-- Dataset / split / task:
-  Same anchor evaluation.
-- Compared systems:
-  - full text router
-  - heuristic router only
-  - no router (fixed weights)
-- Metrics:
-  same as Block 1, plus implementation complexity summary
-- Setup details:
-  Keep all else fixed.
-- Success criterion:
-  Full method wins or at least clearly justifies its extra complexity.
-- Failure interpretation:
-  Simpler method may be the better paper.
-- Table / figure target:
-  Compact deletion study in main paper or appendix depending on strength.
-- Priority:
-  MUST-RUN
+### Block 3：简洁性 / 删除实验
 
-### Block 4: Fallback / Robustness Check
-- Claim tested:
-  The routing layer is safe enough to be usable.
-- Why this block exists:
-  Safety is important, but this should not dominate the paper.
-- Dataset / split / task:
-  Preference shifts + noisy summary / invalid output scenarios.
-- Compared systems:
-  - router without fallback
-  - router with deterministic fallback
-- Metrics:
-  invalid-output rate, KPI degradation, feasibility violations
-- Setup details:
-  Inject malformed or low-confidence routing cases.
-- Success criterion:
-  fallback protects feasibility with limited KPI cost.
-- Failure interpretation:
-  System is brittle and less credible.
-- Table / figure target:
-  Appendix or compact safety table.
-- Priority:
-  MUST-RUN
+- **测试主张**：
+  当前方法是必要复杂度，而不是过度设计
+- **为什么必须做**：
+  reviewer 会自然问：更简单的 router 是否已经够用？
+- **数据 / 任务**：
+  同 Block 1
+- **比较对象**：
+  - 完整文本 router
+  - heuristic router
+  - 无 router（固定权重）
+- **指标**：
+  与 Block 1 相同，外加实现复杂度比较
+- **设置细节**：
+  其余全部保持不变
+- **成功标准**：
+  当前方法至少在性能或可扩展表达能力上足够 justify 额外复杂度
+- **失败解释**：
+  可能更简单的方法才是更好的论文
+- **论文位置**：
+  主文或 appendix 的删除实验
+- **优先级**：
+  `MUST-RUN`
 
-### Block 5: Optional Transfer or OOD Extension
-- Claim tested:
-  The idea is not narrowly tied to one schedule.
-- Why this block exists:
-  Strengthens the story if early results are good.
-- Dataset / split / task:
-  OOD weather/price variants or optional second benchmark later.
-- Compared systems:
-  best fixed baseline vs best router variant
-- Metrics:
-  degradation under shift
-- Setup details:
-  Only run after Blocks 1-4 succeed.
-- Success criterion:
-  Reasonable stability.
-- Failure interpretation:
-  Keep the paper narrower.
-- Table / figure target:
-  appendix or later extension.
-- Priority:
-  NICE-TO-HAVE
+### Block 4：fallback / 鲁棒性检查
 
-## Run Order and Milestones
+- **测试主张**：
+  路由层在实际使用上足够安全
+- **为什么必须做**：
+  安全性不是主贡献，但如果过脆弱，整篇论文会失去可信度
+- **数据 / 任务**：
+  preference shift + noisy summary / invalid output 场景
+- **比较对象**：
+  - 无 fallback 的 router
+  - 有 deterministic fallback 的 router
+- **指标**：
+  - 非法输出率
+  - KPI 降级幅度
+  - 可行性违规情况
+- **设置细节**：
+  人工注入低置信 / 错误格式情形
+- **成功标准**：
+  fallback 能保护可行性，且不会造成过大性能损失
+- **失败解释**：
+  系统过于脆弱，不适合作为强论文主张
+- **论文位置**：
+  appendix 或小型安全性表
+- **优先级**：
+  `MUST-RUN`
 
-| Milestone | Goal | Runs | Decision Gate | Cost | Risk |
+### Block 5：可选的 OOD / transfer 扩展
+
+- **测试主张**：
+  该想法不只是对一个固定日程有效
+- **为什么做**：
+  如果前面结果足够强，可以增强说服力
+- **数据 / 任务**：
+  OOD weather / price 变体，或第二 benchmark 的后续迁移
+- **比较对象**：
+  当前最佳固定权重系统 vs 当前最佳 router
+- **指标**：
+  shift 下的性能退化幅度
+- **设置细节**：
+  只在前 4 个实验块成功后执行
+- **成功标准**：
+  在分布偏移下退化可控
+- **失败解释**：
+  保持论文更窄，不做强泛化主张
+- **论文位置**：
+  appendix 或后续工作
+- **优先级**：
+  `NICE-TO-HAVE`
+
+## 运行顺序与里程碑
+
+| 里程碑 | 目标 | 对应运行 | 决策门 | 成本 | 风险 |
 |---|---|---|---|---|---|
-| M0 | define preference regimes and metric logic | regime scripts + scoring checks | if metrics unclear, stop | low | evaluation ambiguity |
-| M1 | baseline reproduction | fixed-weight variants + current learned controller | if fixed baselines unstable, stop | low | poor comparability |
-| M2 | main router prototype | heuristic + text or text-like router | if no gain under shifts, rethink thesis | moderate | weak main claim |
-| M3 | novelty isolation | text vs numeric vs rule router | if language adds nothing, downgrade claim | moderate | novelty collapse |
-| M4 | fallback robustness | fallback ablation | if brittle, keep as future work | low-moderate | safety weakness |
+| M0 | 定义偏好切换协议与评分规则 | regime 脚本 + scorer | 如果指标定义不清，立刻停下 | 低 | 评估含糊 |
+| M1 | 复现 baseline | 固定权重变体 + 当前 learned controller | 如果固定 baseline 自己不稳定，先修这个 | 低 | 比较不公平 |
+| M2 | 跑主方法雏形 | heuristic router + text-like router | 如果偏好切换下无增益，重新思考 thesis | 中 | 主张太弱 |
+| M3 | 做 novelty isolation | text vs numeric vs rule router | 如果语言没带来区别，降级主张 | 中 | novelty 崩塌 |
+| M4 | 做 fallback 检查 | fallback ablation | 如果太脆弱，先不做主卖点 | 低到中 | 安全性不足 |
 
-## Compute and Data Budget
+## 算力与数据预算
 
-- Total estimated GPU-hours:
-  modest if the low-level forecaster is frozen and routing is lightweight
-- Data preparation needs:
-  synthetic preference schedules and compact scenario summaries
-- Human evaluation needs:
-  none for first pass
-- Biggest bottleneck:
-  designing a convincing preference-shift protocol that is realistic enough
+- **总 GPU 小时**：
+  如果低层 forecaster 冻结，整体不会太高
+- **数据准备需求**：
+  主要是 preference schedule 与 compact summary 构造
+- **人工标注需求**：
+  第一版不需要
+- **当前最大瓶颈**：
+  不是算力，而是如何设计一个足够可信的 preference-shift 协议
 
-## Risks and Mitigations
+## 风险与对应措施
 
-- Risk:
-  language-conditioned routing is no better than a numeric preference vector.
-  - Mitigation:
-    narrow the paper to preference-conditioned routing rather than forcing an LLM novelty claim.
-- Risk:
-  the shift task looks artificial.
-  - Mitigation:
-    tie preference regimes to realistic operator narratives.
-- Risk:
-  low-level controller issues contaminate routing evaluation.
-  - Mitigation:
-    freeze the current validated `forecast + QP` stack before router experiments.
+- **风险**：
+  语言条件路由不如数值偏好向量
+  - **措施**：
+    把主张收缩为“偏好条件化路由”，而不是硬撑 LLM novelty
 
-## Final Checklist
+- **风险**：
+  偏好切换任务看起来太人工
+  - **措施**：
+    把 preference regime 绑定到更真实的运营语境
 
-- [ ] Main paper tables are covered
-- [ ] Novelty is isolated
-- [ ] Simplicity is defended
-- [ ] Frontier contribution is justified or explicitly downgraded
-- [ ] Nice-to-have runs are separated from must-run runs
+- **风险**：
+  低层控制器问题污染高层路由评估
+  - **措施**：
+    在 router 实验前冻结当前已验证的 `forecast + QP` 主循环
+
+## 最终核对清单
+
+- [ ] 主表已经被实验覆盖
+- [ ] novelty 已被隔离验证
+- [ ] 简洁性已被防守
+- [ ] frontier 贡献已被证明，或已被明确降级
+- [ ] 可选实验与必须实验已经分开

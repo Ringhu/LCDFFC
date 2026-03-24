@@ -1,49 +1,44 @@
-# LLM Router 最小规格说明
+# LLM Router 模块旧规格（legacy）
 
-## 当前定位
+这个文件只保留早期 router 设计想法，不再作为当前实现说明。
 
-LLM router 不是当前第一阶段主闭环的一部分。  
-它的角色被限定为高层偏好和约束路由器，不能直接输出底层连续动作。
+当前 router 事实请看：
 
-## 目标输出
+- `llm_router/router.py`
+- `tests/test_llm_router.py`
+- `CLAUDE.md`
+- `README.md`
 
-最终可用版本应输出结构化对象，至少包含：
+## 当前代码里已经存在什么
 
-- `weights`
-- `constraints`
-- `mode`
-
-其中：
-
-- `weights` 用于调整 QP 目标权重
-- `constraints` 用于调整高层控制约束，例如 `reserve_soc`
-- `mode` 用于表达策略模式，例如 `cost_first`、`carbon_first`、`balanced`
-
-## 当前代码状态
-
-当前已存在：
-
-- `llm_router/prompt_templates.py`
-- `llm_router/json_schema.py`
-- `scripts/generate_instruction_data.py`
-
-当前未完成：
+当前代码里已经有：
 
 - `LLMRouter.route()`
-- 真正的模型调用逻辑
-- deterministic fallback
-- 将 `mode` 纳入 schema 与控制调用链
+- prompt context 构造
+- transformers backend 的 lazy load
+- JSON parse
+- bad JSON 时回到默认 profile
 
-## 设计约束
+所以这份旧规格里“`route()` 未实现”这类说法现在都失效了。
 
-- 调用频率应低于底层控制频率，优先按小时级或更低频率调用
-- 输出必须是结构化 JSON，而不是自由文本
-- 即使 LLM 不可用，也必须能退回到确定性默认策略
-- 在第一阶段验收通过前，不应把该模块当作当前主结果来源
+## 这个模块现在该怎么描述
 
-## 当前文档要求
+当前更准确的说法是：
 
-在 `README.md`、`CLAUDE.md`、`INSTRUCTION.md` 等文档中，不得把 LLM router 写成已完成的可运行能力。当前只能写成：
+- 它是 high-level preference / constraint router
+- 它输出结构化 `weights / constraints / mode`
+- 它不输出底层连续动作
+- 它现在只是最小 prompt-only 实验模块，不是 production router
 
-- 已有 prompt/schema 骨架
-- 尚未接入真实 runtime 路由
+## 现在还没完成什么
+
+下面这些仍然不能写成完成：
+
+- 更完整的 `mode` 到 controller 调用链映射
+- 更强的 robustness 证据
+- 出错时退回固定规则的完整路径
+- agentic runtime 或 production deployment
+
+## 保留这份文件的原因
+
+它还能用来说明最早 router 设计想强调的边界：LLM 只负责高层偏好，不直接接管低层动作。

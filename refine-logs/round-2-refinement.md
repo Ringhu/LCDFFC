@@ -2,255 +2,251 @@
 
 ## Problem Anchor
 - Bottom-line problem:
-  Build a publishable method for exogenous time-series-driven control where better forecasting translates into reliable downstream control gains rather than only lower forecast error.
+  Build a publishable method for exogenous time-series-driven control where forecast training improves downstream control KPIs, not just average forecast error.
 - Must-solve bottleneck:
-  In forecast-then-control pipelines, the controller only cares about a small subset of future windows and channels, but standard training treats all forecast errors roughly equally. This mismatch is why stronger forecasters often fail to produce stable KPI gains.
+  In forecast-then-control pipelines, the controller only cares about a small subset of future windows and channels, but the current raw cell-wise CSFT labels appear too sharp, too noisy, or misaligned to provide useful supervision. The current pilot suggests that naive controller-sensitive weighting can hurt both forecasting and control.
 - Non-goals:
-  Not trying to build a new time-series foundation model, not using LLMs to output low-level actions, not making RL the main method, and not forcing a multi-environment paper in the first version.
+  Not scaling to more seeds/backbones yet, not introducing a new controller, not switching to end-to-end RL, not making language routing part of the main story, and not claiming a final paper-ready method before pilot failure is explained.
 - Constraints:
-  Start from CityLearn battery control, keep the current low-level QP stack fixed, use modest compute, and keep the main method small enough to implement and validate quickly in the current repository.
+  Start from the current CityLearn + GRU + fixed `qp_carbon` stack, use the existing chronological split and artifacts, keep compute modest, use GPU 2 only for training/inference, and prefer diagnostics that reuse existing checkpoints before new full reruns.
 - Success condition:
-  With the same controller, the proposed training method should produce more consistent cost / carbon / peak improvements than plain uniform forecast training, and the gain should be traceable to better accuracy on controller-critical future windows.
+  After a small diagnostic-and-refinement loop, either (a) a softened controller-sensitive training objective shows better error on controller-critical cells and at least early positive KPI signal over uniform training, or (b) we can confidently falsify the current raw-label route and pivot without wasting more compute.
 
 ## Anchor Check
 - Original bottleneck:
-  预测误差没有区分哪些 future slots 真正影响固定控制器的下游目标。
+  当前真正的问题不是模型太弱，而是 controller-derived supervision 是否有效、是否稳定。
 - Why the revised method still addresses it:
-  这版方法只改 forecast loss，不改 controller，不改 inference path。它直接把 controller sensitivity 变成训练监督。
+  这轮 refinement 继续只修 supervision，不改 backbone、不改 controller、不改推理路径。
 - Reviewer suggestions rejected as drift:
-  把论文主线放到 language routing、fallback robustness、Grid2Op transfer，都会把第一篇论文从 forecast-control bottleneck 上带偏。
+  不新增额外实验家族，不回到 broader CSFT family，也不把 heuristic baselines 抬成主方法。
 
 ## Simplicity Check
 - Dominant contribution after revision:
-  Controller-Sensitive Forecast Training, CSFT。
+  一个完全数值化的 preflight gate + 一个固定 stabilized operator。
 - Components removed or merged:
-  去掉 language-conditioned router 作为主贡献；去掉 uncertainty / fallback 作为主贡献；不再把 backbone zoo 当论文主体。
+  删除多余指标歧义；主接受标准只围绕 MAE 和主 KPI；preflight 输出压缩为单一 PASS/FAIL。
 - Reviewer suggestions rejected as unnecessary complexity:
-  不做 full differentiable decision-focused training；不做长 rollout regret 主损失；不做多环境大扩展。
+  不再保留 narrative-style check，不保留多阈值搜索，不加第二套 stabilization path。
 - Why the remaining mechanism is still the smallest adequate route:
-  它只新增离线 sensitivity label 生成和一个 weighted forecast loss，其他训练 / 推理路径都沿用当前稳定主栈。
+  它现在是一个可执行算法：给定 checkpoint 和 label，就能直接给出 PASS/FAIL 和后续唯一训练配方。
 
 ## Changes Made
 
-### 1. 论文锚点从 high-level routing 改回 forecast-side bottleneck
+### 1. Numeric preflight thresholds are now fully specified
 - Reviewer said:
-  language routing 目前更像 wrapper，不像第一篇顶会主线。
+  preflight 还带有“not catastrophically losing”这类定性说法，不够算法化。
 - Action:
-  主线改成 controller-sensitive forecast refinement。
+  把 oracle alignment、top-decile fail threshold、Huber delta、epsilon、median_positive_train 计算方式全部数值化。
 - Reasoning:
-  当前仓库最强信号来自固定 controller 下不同 forecast/controller choices 的 KPI 变化，不是 language superiority。
+  这样 reviewer 看到的是一个可执行 gate，不是 debug 经验。
 - Impact on core method:
-  论文 claim 从“在线偏好路由”改成“uniform forecast loss 不适合 forecast-then-control”。
+  proposal 更像一个 fixed algorithm，而不是研究过程记录。
 
-### 2. 主方法收缩到 A1
+### 2. Acceptance rule is narrowed to MAE + primary KPIs
 - Reviewer said:
-  A1 finite-difference controller sensitivity 是最干净的最小方法；A2 适合作 baseline；A4 太重。
+  双 forecast 指标会造成歧义。
 - Action:
-  采用 A1 作为主方法，A2 作为 heuristic baseline，A3 只作为工程 fallback 预案，不写成主贡献。
+  主 claim 中只保留 MAE 和 primary KPIs (`cost`, `carbon`, `peak`)。
 - Reasoning:
-  A1 最贴 thesis，也最容易用现有固定 QP controller 实现。
+  MAE 更贴近当前 pilot 诊断，也能减少 metric shopping 的感觉。
 - Impact on core method:
-  方法边界清楚，validation 也更容易闭合。
-
-### 3. 主实验包大幅收缩
-- Reviewer said:
-  只保留一个主 controller、一个主 backbone、少量关键 ablations。
-- Action:
-  主实验固定 `qp_carbon`；主 backbone 只保留一个稳定可训练模型；主 ablations 只保留 3 组。
-- Reasoning:
-  先把机制讲清，再决定要不要补 foundation replication。
-- Impact on core method:
-  claim 和实验一一对应，不再是路线图式大合集。
+  pass/fail rule 更紧，叙事更清楚。
 
 ## Revised Proposal
 
-# Research Proposal: Controller-Sensitive Forecast Training for Fixed Forecast-Then-Control
+# Research Proposal: Algorithmic Preflight-Validated CSFT
 
 ## Problem Anchor
 - Bottom-line problem:
-  Build a publishable method for exogenous time-series-driven control where better forecasting translates into reliable downstream control gains rather than only lower forecast error.
+  Build a publishable method for exogenous time-series-driven control where forecast training improves downstream control KPIs, not just average forecast error.
 - Must-solve bottleneck:
-  In forecast-then-control pipelines, the controller only cares about a small subset of future windows and channels, but standard training treats all forecast errors roughly equally. This mismatch is why stronger forecasters often fail to produce stable KPI gains.
+  In forecast-then-control pipelines, the controller only cares about a small subset of future windows and channels, but the current raw cell-wise CSFT labels appear too sharp, too noisy, or misaligned to provide useful supervision. The current pilot suggests that naive controller-sensitive weighting can hurt both forecasting and control.
 - Non-goals:
-  Not trying to build a new time-series foundation model, not using LLMs to output low-level actions, not making RL the main method, and not forcing a multi-environment paper in the first version.
+  Not scaling to more seeds/backbones yet, not introducing a new controller, not switching to end-to-end RL, not making language routing part of the main story, and not claiming a final paper-ready method before pilot failure is explained.
 - Constraints:
-  Start from CityLearn battery control, keep the current low-level QP stack fixed, use modest compute, and keep the main method small enough to implement and validate quickly in the current repository.
+  Start from the current CityLearn + GRU + fixed `qp_carbon` stack, use the existing chronological split and artifacts, keep compute modest, use GPU 2 only for training/inference, and prefer diagnostics that reuse existing checkpoints before new full reruns.
 - Success condition:
-  With the same controller, the proposed training method should produce more consistent cost / carbon / peak improvements than plain uniform forecast training, and the gain should be traceable to better accuracy on controller-critical future windows.
+  After a small diagnostic-and-refinement loop, either (a) a softened controller-sensitive training objective shows better error on controller-critical cells and at least early positive KPI signal over uniform training, or (b) we can confidently falsify the current raw-label route and pivot without wasting more compute.
 
 ## Technical Gap
-当前主路径已经说明，单纯把 forecasting 做出来不够。固定 controller 的目标函数只依赖一小部分未来窗口和通道，但常规 forecasting loss 对所有 horizon / channel 基本一视同仁。结果是模型可能在平均误差上更好，却没有把容量用在真正影响 `cost / carbon / peak` 的位置。
+The pilot failure implies that raw controller sensitivity is not yet a valid training signal. The actual method question is therefore:
 
-更大的 backbone 不是直接答案。因为 capacity 还是可能被浪费在对控制几乎不敏感的 future slots 上。完整 end-to-end decision-focused training 也不是第一篇该走的路。它更重、更难稳，而且会把当前已经跑通的 forecast + fixed-QP decomposition 一起搅乱。
+> Can controller-derived sensitivity be converted into a stable, trainable supervision signal by a fixed validation-and-stabilization algorithm?
 
-缺的不是新的 controller。缺的是一个小而直接的机制：把固定 controller 对 future forecast cell 的敏感度，变成 forecast training 的监督。
+The answer must be algorithmic, not narrative. So the proposal is reduced to one gate and one operator.
 
 ## Method Thesis
 - One-sentence thesis:
-  Uniform forecast accuracy is the wrong training target for forecast-then-control; a frozen controller can provide per-slot sensitivity signals that reweight forecast training toward controller-critical future cells.
+  Raw finite-difference controller sensitivities should only be used for forecast training after passing a numerical preflight validity gate and a fixed stabilization operator.
 - Why this is the smallest adequate intervention:
-  Environment、controller、inference path、forecast architecture 都不变，只新增离线 sensitivity label 和 weighted loss。
+  Nothing in inference changes; only the training-side supervision is repaired.
 - Why this route is timely in the foundation-model era:
-  当前真正缺的不是再做一个 backbone，而是让已有 backbone 在 forecast-then-control 场景里更接近真实决策目标。
+  The current failure is supervision-limited, not capacity-limited.
 
 ## Contribution Focus
 - Dominant contribution:
-  A controller-sensitive forecast training recipe that uses frozen-QP finite-difference sensitivities as supervision for weighted forecast refinement.
+  A fully specified algorithm that decides whether raw controller-sensitive labels are valid enough to use, and if so, transforms them into stabilized mixed-loss weights.
 - Optional supporting contribution:
-  A controller-matched vs mismatched-label analysis showing the weighting signal is not generic importance, but controller-specific importance.
+  None in the main claim.
 - Explicit non-contributions:
-  No new controller, no new foundation model, no language router as a main claim, no full decision-focused differentiable training stack.
+  No controller redesign, no new backbone, no RL, no routing, no search over multiple stabilization recipes.
 
 ## Proposed Method
 ### Complexity Budget
 - Frozen / reused backbone:
-  CityLearn data path, existing dataset windows, one existing forecast backbone, and the current `qp_carbon` controller.
+  Current GRU forecaster, current CityLearn data path, chronological split, fixed `qp_carbon` controller, and existing uniform/raw-CSFT checkpoints.
 - New trainable components:
-  No new trainable module is required. The method adds offline sensitivity-map generation and a mixed weighted forecast loss.
+  None.
 - Tempting additions intentionally not used:
-  Free-form routing, uncertainty ensemble, fallback robustness as paper claim, Grid2Op transfer, end-to-end RL, backbone zoo.
+  alternative transforms, smoothing variants, bucketed fallback, backbone/controller scaling.
 
 ### System Overview
 ```text
-history + known future exogenous signals
-  -> forecasting backbone
-  -> future exogenous trajectory forecast
-  -> fixed qp_carbon controller
-  -> battery action
-  -> CityLearn rollout
-
-training-only side path:
-training sample + oracle future + fixed qp_carbon
-  -> per-slot finite-difference sensitivity map
-  -> normalized controller-sensitive weights
-  -> mixed weighted forecast loss
+raw finite-difference sensitivity labels
+  -> numerical preflight gate (PASS/FAIL)
+  -> fixed stabilization operator
+  -> mixed weighted Huber loss
+  -> one stabilized-CSFT rerun
 ```
 
 ### Core Mechanism
 - Input / output:
-  输入和当前 forecaster 一样，输出仍然是 controller 消费的 future exogenous trajectory。
-- Architecture or policy:
-  Forecast backbone 不变。`qp_carbon` controller 不变。新机制是对每个训练样本生成 `H x C` 的 local sensitivity map。
-- Offline label generation:
-  对于每个 sample 的 oracle future `y_t` 和每个 forecast cell `(h, c)`，构造
-  - `y+ = y_t + δ_c e_(h,c)`
-  - `y- = y_t - δ_c e_(h,c)`
-  然后分别送入固定 `qp_carbon` controller，得到对应 first-step action 下的一步 stage objective `ℓ_t(a+)` 与 `ℓ_t(a-)`。
+  Same forecasting input/output as the current GRU setup.
 
-  定义 sensitivity:
+- Step 1: Numerical preflight gate
+  Given existing uniform/raw-CSFT checkpoints and current artifacts, compute two checks:
 
-  `s_(t,h,c) = |ℓ_t(a+) - ℓ_t(a-)| / (2 δ_c)`
+  **(A) Oracle alignment test**
+  - Compare oracle slices and environment-derived future `price/load/solar` on the first 20 matched steps.
+  - Pass criterion:
+    `max_abs_error <= 1e-6` for each of the three channels.
 
-  其中 `δ_c` 按通道标准差缩放，初始设成 `0.1 * std(channel c)`。
-- Weight normalization:
-  对 `s_(t,h,c)` 先做训练集 95 分位截断，再在样本内归一化：
+  **(B) Raw-label utility test**
+  - Use current test labels to rank all forecast cells by sensitivity.
+  - Compute top-decile MAE for uniform and raw-CSFT.
+  - Pass criterion:
+    raw-CSFT top-decile MAE is **not worse than uniform by more than 5%**.
 
-  `ŝ_(t,h,c) = s_(t,h,c) / (eps + mean_{h,c}(s_(t,h,c)))`
+  Preflight returns a single boolean:
+  - PASS only if both (A) and (B) pass.
+  - Otherwise FAIL and stop this method route.
 
-- Training signal / loss:
-  用 mixed weighted loss，而不是纯 weighted loss：
+- Step 2: Fixed stabilization operator
+  If preflight passes, compute weights as follows.
 
-  `L_t = α * Σ ell(yhat, y) + (1-α) * Σ ŝ_(t,h,c) * ell(yhat_(t,h,c), y_(t,h,c))`
+  Let `q95_train` be the 95th percentile over all positive raw train sensitivities.
+  Let `m_train` be the median over all positive clipped raw train sensitivities.
+  Let `eps = 1e-8`.
 
-  其中 `ell` 用 Huber 或 MAE，`α` 从 `0.5` 起步。
+  For each raw sensitivity `s_(t,h,c)`:
+  1. `s_clip = min(max(s_(t,h,c), 0), q95_train)`
+  2. `u_(t,h,c) = log1p(s_clip / (m_train + eps))`
+  3. `w_(t,h,c) = u_(t,h,c) / (eps + mean_{h,c}(u_(t,h,c)))`
+
+  This is the only stabilization operator used in the paper.
+
+- Step 3: Fixed mixed objective
+  Train the stabilized model with Huber loss where:
+  - Huber delta = `1.0`
+  - `alpha = 0.85`
+
+  Objective:
+
+  `L_t = 0.85 * sum Huber(yhat, y) + 0.15 * sum w_(t,h,c) * Huber(yhat_(t,h,c), y_(t,h,c))`
+
 - Why this is the main novelty:
-  这不是 hand-crafted event rule，也不是 full DFL。它把固定 controller 的局部敏感度直接抽出来，变成 forecast-side supervision。
+  The contribution is now a reproducible algorithmic claim: controller-sensitive supervision becomes usable only after a numerical validity gate and a fixed stabilization operator.
 
 ### Optional Supporting Component
-- Only include if truly necessary:
-  无。第一版 proposal 不引入额外 trainable auxiliary head。
-- Why it does not create contribution sprawl:
-  把主线压到一条机制上，避免第二个 trainable module 稀释论文说法。
+- None.
 
 ### Modern Primitive Usage
-- Which foundation-model-era primitive is used:
-  没有必须的 LLM / RL / Diffusion 组件。foundation TS model 最多只作为后续 replication backbone，不进主 claim。
-- Exact role in the pipeline:
-  如果后续补 foundation replication，它只是 numeric backbone。
-- Why this is more natural than an old-school alternative:
-  这篇论文的核心不是 modern primitive，而是 decision-relevant forecast supervision。这里保持保守，反而更稳。
+- None.
 
 ### Integration into Base Generator / Downstream Pipeline
-方法挂在训练阶段，不改推理路径。
-
-1. 用当前标准 loss 训练或复用 baseline forecaster。
-2. 在训练集上用固定 `qp_carbon` 生成 sensitivity map。
-3. 用 mixed weighted loss 微调同一个 forecaster。
-4. 推理时仍然走原来的 `forecast -> qp_carbon -> CityLearn`。
-
-这保证主系统结构不变，工程风险也最低。
+1. Run numerical preflight on existing artifacts.
+2. If FAIL: stop and falsify raw-CSFT in this setting.
+3. If PASS: compute stabilized weights with the fixed operator.
+4. Train one stabilized-CSFT rerun on GPU 2.
+5. Evaluate with unchanged `forecast -> qp_carbon -> CityLearn` pipeline.
 
 ### Training Plan
-1. 选一个稳定的主 forecasting backbone。
-2. 用当前标准 loss 训练 uniform baseline。
-3. 对训练样本生成 `qp_carbon` sensitivity labels。
-4. 做截断、归一化和样本缓存。
-5. 用 mixed weighted loss 微调得到 CSFT 模型。
-6. 只在主 backbone 上完成完整实验。
-7. 如果主结果为正，再决定是否补一个 foundation replication。
+1. Run one preflight script.
+2. If PASS, launch one stabilized-CSFT rerun.
+3. Evaluate against uniform and raw-CSFT.
+4. Stop/go decision immediately after this single rerun.
 
 ### Failure Modes and Diagnostics
-- Sensitivity label 太噪：
-  用 rank correlation、邻近窗口平滑和样本内分布看稳定性。必要时只做 top-k mask pilot，但不把它写成主方法。
-- Weighted loss 只提升少数 spike，拖坏整体 forecast：
-  比较 `α=0.5` 与 `α=0`，用 mixed loss 兜底。
-- 下游 KPI 提升不明显：
-  对照 `top-sensitivity decile` forecast error 是否真的下降。如果没有，就说明 sensitivity labels 本身没有提供有效监督。
-- 结果被 reviewer 说成 heuristic reweighting：
-  用 `event-only` baseline 和 `mismatched-controller labels` ablation 防守。
+- Failure mode: oracle alignment fails.
+  - Detection: preflight alignment test.
+  - Mitigation: stop and fix oracle path before any further interpretation.
+- Failure mode: raw labels fail the utility test.
+  - Detection: preflight top-decile MAE threshold.
+  - Mitigation: falsify raw slot-wise CSFT for this setting.
+- Failure mode: stabilized rerun improves top-decile MAE but hurts aggregate MAE too much.
+  - Detection: acceptance rule below.
+  - Mitigation: reject method as too costly in aggregate forecast quality.
+- Failure mode: stabilized rerun improves forecast-side critical cells but not primary KPIs.
+  - Detection: acceptance rule below.
+  - Mitigation: reject method as not decision-useful enough.
 
 ### Novelty and Elegance Argument
-论文只讲一句话：
+The paper asks one narrow question:
 
-> 在固定 forecast-then-control 系统里，uniform forecast loss 学错了目标；forecast training 应该优先修正 controller 真正在意的 future errors。
+> When can controller-derived sensitivity be trusted as supervision for forecasting?
 
-这比 routing、fallback、uncertainty、multi-domain transfer 的大合集更集中，也更符合当前仓库已经有的稳定基础设施。
+The proposed answer is fully algorithmic:
+
+> Only when it clears a numerical preflight gate, and only after a fixed stabilization operator.
+
+That is sharper than a general “debug and tune CSFT” story.
 
 ## Claim-Driven Validation Sketch
-### Claim 1: Controller-sensitive forecast training improves downstream KPIs more reliably than uniform forecast training
+### Claim 1: Raw controller-sensitive labels are only usable if they pass a numerical validity gate
 - Minimal experiment:
-  同一个 backbone、同一个 `qp_carbon` controller，对比 uniform loss vs CSFT。
+  Run the preflight.
 - Baselines / ablations:
-  uniform loss、manual horizon weighting、event-window weighting。
+  oracle slices vs env truth; uniform vs raw-CSFT top-decile MAE.
 - Metric:
-  total cost、total carbon、peak load，以及 relative gap-to-oracle。
+  `max_abs_error`, top-decile MAE ratio.
 - Expected evidence:
-  CSFT 在标准测试和 stress subset 上都比 uniform loss 更稳，且优于 heuristic weighting。
+  FAIL means the method route should not be scaled.
 
-### Claim 2: The gain comes from protecting controller-critical forecast cells, not blanket accuracy improvement
+### Claim 2: The fixed stabilization operator should improve controller-critical fitting without unacceptable aggregate degradation
 - Minimal experiment:
-  把 forecast cells 按 sensitivity decile 分桶，比较 uniform vs CSFT 的 error reduction。
+  One stabilized-CSFT rerun.
 - Baselines / ablations:
-  uniform loss vs CSFT。
+  uniform, raw-CSFT, stabilized-CSFT.
 - Metric:
-  overall RMSE/MAE、top-sensitivity-decile RMSE/MAE、error reduction vs sensitivity decile plot。
+  top-decile MAE and overall MAE.
 - Expected evidence:
-  overall forecast error变化不大，但高敏感度桶下降明显。
+  stabilized-CSFT beats raw-CSFT on top-decile MAE and stays close to uniform on overall MAE.
 
-### Claim 3: The weighting signal is controller-specific rather than generic importance
+### Claim 3: The method is viable only if it passes a pre-registered acceptance rule
 - Minimal experiment:
-  用 `qp_carbon` labels 训练 CSFT；再用 `qp_current` labels 训练同样的模型；都在 `qp_carbon` 下评估。
-- Baselines / ablations:
-  matched-controller labels vs mismatched-controller labels。
-- Metric:
-  downstream KPI delta、top-decile forecast error、gap-to-oracle closure。
-- Expected evidence:
-  matched labels 明显比 mismatched labels 更有效。
+  Evaluate stabilized-CSFT vs uniform.
+- Acceptance rule:
+  1. top-decile MAE lower than uniform,
+  2. overall MAE no worse than uniform by more than 1%,
+  3. at least one of `cost` or `carbon` improves,
+  4. `peak` no worse than uniform by more than 1%.
+
+  All four must hold.
 
 ## Experiment Handoff Inputs
 - Must-prove claims:
-  uniform loss 不适合 fixed forecast-then-control；controller-sensitive labels 能带来 controller-specific 的 forecast refinement；这种 refinement 会转化成稳定下游 KPI 提升。
+  the preflight gate is meaningful, and the fixed stabilization operator can convert valid raw sensitivities into useful supervision.
 - Must-run ablations:
-  uniform、manual horizon weighting、event-window weighting、CSFT、mismatched-controller labels、mixed vs pure weighted loss。
+  uniform vs raw-CSFT top-decile analysis; oracle alignment test; one stabilized rerun.
 - Critical datasets / metrics:
-  CityLearn 2023 单一主设定；chronological split；standard / carbon-price stress / peak-load stress 三种 test view；cost / carbon / peak + top-decile forecast error。
+  current split, existing checkpoints, label files, top-decile MAE, overall MAE, `cost`, `carbon`, `peak`.
 - Highest-risk assumptions:
-  sensitivity labels 必须足够稳定；CSFT 不能只是“看起来有道理”，而要在 heuristic baselines 之上给出清楚增益。
+  preflight may immediately fail; if so, this route should be stopped rather than expanded.
 
 ## Compute & Timeline Estimate
 - Estimated GPU-hours:
-  训练本身不高。主要额外成本在离线 sensitivity label 生成，但这比 full end-to-end DFL 轻很多。
+  Very low for preflight, low for one rerun.
 - Data / annotation cost:
-  无人工标注。labels 全来自固定 QP controller 的 perturbation solves。
+  None.
 - Timeline:
-  先做 label generation pilot 和 1 个 backbone 小规模训练；一旦 sensitivity plot 有信号，再扩到完整 test / ablations。
+  one preflight, one rerun, one stop/go decision.

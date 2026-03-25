@@ -1,191 +1,212 @@
-# Research Proposal: Decision-Critical Forecast Refinement for Exogenous Time-Series Control
+# Research Proposal: Stabilized Controller-Sensitive Forecast Training After Pilot Failure
 
 ## Problem Anchor
 - Bottom-line problem:
-  Build a publishable method for exogenous time-series-driven control where better forecasting translates into reliable downstream control gains rather than only lower forecast error.
+  Build a publishable method for exogenous time-series-driven control where forecast training improves downstream control KPIs, not just average forecast error.
 - Must-solve bottleneck:
-  In forecast-then-control pipelines, the controller only cares about a small subset of future windows and channels, but standard training treats all forecast errors roughly equally. This mismatch is why stronger forecasters often fail to produce stable KPI gains.
+  In forecast-then-control pipelines, the controller only cares about a small subset of future windows and channels, but the current raw cell-wise CSFT labels appear too sharp, too noisy, or misaligned to provide useful supervision. The current pilot suggests that naive controller-sensitive weighting can hurt both forecasting and control.
 - Non-goals:
-  Not trying to build a new time-series foundation model, not using LLMs to output low-level actions, not making RL the main method, and not forcing a multi-environment paper in the first version.
+  Not scaling to more seeds/backbones yet, not introducing a new controller, not switching to end-to-end RL, not making language routing part of the main story, and not claiming a final paper-ready method before pilot failure is explained.
 - Constraints:
-  Start from CityLearn battery control, keep the current low-level QP stack fixed, use modest compute, and keep the main method small enough to implement and validate quickly in the current repository.
+  Start from the current CityLearn + GRU + fixed `qp_carbon` stack, use the existing chronological split and artifacts, keep compute modest, use GPU 2 only for training/inference, and prefer diagnostics that reuse existing checkpoints before new full reruns.
 - Success condition:
-  With the same controller, the proposed training method should produce more consistent cost / carbon / peak improvements than plain MSE training across at least one classic backbone and one strong foundation backbone, and the gain should be traceable to better accuracy on controller-critical future windows.
+  After a small diagnostic-and-refinement loop, either (a) a softened controller-sensitive training objective shows better error on controller-critical cells and at least early positive KPI signal over uniform training, or (b) we can confidently falsify the current raw-label route and pivot without wasting more compute.
 
 ## Technical Gap
-Current predict-then-optimize pipelines usually break at the same place. The forecaster is optimized for average error, while the controller reacts to a few decision-critical future events such as price spikes, carbon spikes, outage-sensitive reserve periods, and peak-load windows. A backbone can improve average MSE and still miss the exact windows that move the control objective.
+Current evidence says the original A1-style CSFT formulation is not yet a paper; it is a failed pilot that still needs diagnosis. The actual numbers are not ambiguous: compared with uniform training, current CSFT worsens overall forecast MSE/MAE and also worsens `cost`, `carbon`, `peak`, and `ramping` under the same fixed `qp_carbon` controller. The label distribution is extremely spiky, and the current oracle path is suspiciously worse than learned uniform.
 
-Naive fixes are not enough.
-- A larger forecaster can still spend capacity on the wrong horizons.
-- End-to-end RL changes the whole problem and loses the clean forecast-control decomposition.
-- Full differentiable decision-focused training through long-horizon control is heavier and less stable than this repo needs for a first paper.
+That means the missing mechanism is no longer just “controller-aware weighting.” The missing mechanism is a **stable and validated controller-sensitive supervision signal**. Without that, raw finite-difference labels are just noisy weights.
 
-The missing mechanism is a small way to tell the forecaster which future errors the controller actually cares about.
+Naive next steps are insufficient:
+- More seeds on a broken pilot will only make the negative result more expensive.
+- More backbones will not fix label mis-specification.
+- Full decision-focused training is too large a pivot before the fixed-controller supervision signal is validated.
+- Heuristic event windows alone are useful baselines, but not a satisfying main method unless they clearly outperform the sensitivity route.
+
+The smallest adequate next route is therefore:
+1. verify whether the current labels help on the cells they claim to prioritize,
+2. verify oracle alignment,
+3. test a softened/stabilized weighting variant before scaling anything else.
 
 ## Method Thesis
 - One-sentence thesis:
-  Fine-tune any forecaster with controller-derived criticality weights so that forecast error is reduced most on the future slots that matter most to the fixed downstream controller.
+  The right next method is not raw CSFT, but **stabilized controller-sensitive forecast training**: keep fixed-controller supervision, but replace brittle cell-wise spike weights with validated, softened importance targets that are required to improve controller-critical forecast cells before being trusted as a training signal.
 - Why this is the smallest adequate intervention:
-  The controller stays fixed. The backbone stays almost unchanged. The only main change is how training weight is assigned across future horizons and channels.
+  The environment, controller, dataset, and backbone all stay fixed. Only the label processing, weighting transform, and acceptance criteria change.
 - Why this route is timely in the foundation-model era:
-  Strong time-series backbones already exist, but they are still trained mostly for generic forecast metrics. A backbone-agnostic control-aware refinement method is a cleaner and more current contribution than building yet another forecasting model.
+  Strong backbones already exist; the bottleneck here is not capacity but misaligned supervision. A small but principled repair to the supervision signal is more valuable than another large model or control stack.
 
 ## Contribution Focus
 - Dominant contribution:
-  A controller-critical forecast refinement recipe that estimates which future forecast slots matter to control, then uses those signals to fine-tune the forecaster.
+  A diagnosis-driven stabilized CSFT recipe that turns raw controller sensitivities into a tractable supervision signal through validation, clipping, smoothing, and softened weighting.
 - Optional supporting contribution:
-  Show that the same refinement objective improves both a classic backbone and a strong foundation backbone, which turns the paper from "one tuned model" into a backbone-agnostic method.
+  A falsification protocol for controller-aware forecasting: top-decile error analysis, oracle alignment check, and matched-versus-broken weighting diagnostics.
 - Explicit non-contributions:
-  No new optimizer, no new low-level controller, no language router in the first paper, no uncertainty stack as a second main contribution.
+  No new controller, no new backbone family as a main claim, no RL policy learning, no LLM-based objective routing, no multi-environment transfer in this phase.
 
 ## Proposed Method
 ### Complexity Budget
 - Frozen / reused backbone:
-  CityLearn environment, current data path, current action space, fixed QP controller, and existing forecaster families.
+  Current GRU forecaster, current CityLearn data path, chronological split, fixed `qp_carbon` controller, and existing CSFT/uniform checkpoints.
 - New trainable components:
-  No mandatory new trainable module. The main novelty is the control-aware refinement objective. If needed for stability, add one lightweight event auxiliary head, but this is optional rather than core.
+  None required.
 - Tempting additions intentionally not used:
-  End-to-end RL, LLM objective routing, uncertainty ensemble as a co-equal contribution, and a required Grid2Op transfer benchmark.
+  Backbone zoo, full differentiable decision-focused training, long-horizon regret optimization, routing/fallback machinery, and broad benchmark expansion.
 
 ### System Overview
 ```text
+existing pipeline:
 history + known future exogenous signals
-  -> forecasting backbone
-  -> future net-demand / PV trajectories
-  -> fixed QP controller
+  -> GRU forecaster
+  -> forecast trajectory
+  -> fixed qp_carbon controller
   -> battery action
   -> CityLearn rollout
 
-training-only side path:
-  training windows + fixed QP + oracle futures
-    -> controller criticality estimator
-    -> per-horizon / per-channel importance weights
-    -> weighted refinement loss for the forecaster
+new diagnosis-and-refinement loop:
+existing checkpoints + test labels
+  -> top-decile error analysis
+  -> verify whether CSFT helps controller-critical cells
+
+env future + oracle slices
+  -> exact alignment check
+  -> verify oracle is trustworthy
+
+raw sensitivity labels
+  -> clipping / transform / coarse smoothing
+  -> softened mixed weighted loss
+  -> one small rerun
 ```
 
 ### Core Mechanism
 - Input / output:
-  Input is the same forecast training window used by the current repo: historical building-side time series plus known or provided future exogenous signals. Output is the same forecast target already consumed by the controller.
-- Architecture or policy:
-  The forecasting backbone stays unchanged. The controller stays unchanged. The new mechanism is an offline criticality estimator that scores each future target slot by how much downstream control quality changes when that slot is perturbed.
+  Same forecasting input and output as the existing GRU setup. The method changes only the training-side importance map.
+- Label validation first:
+  Before trusting any weighted objective, require the current CSFT checkpoint to beat or at least match the uniform checkpoint on the highest-sensitivity forecast cells. If it cannot, the raw label route is not yet a valid supervision target.
+- Stabilized weight construction:
+  Start from existing finite-difference sensitivities `s_(t,h,c)` but do not use them directly. Construct stabilized weights via:
+  1. oracle alignment sanity check,
+  2. clipping at a train-set quantile,
+  3. monotone soft transform such as `sqrt(s)` or `log1p(s / tau)`,
+  4. optional horizon-channel smoothing or rank-binning,
+  5. per-sample normalization.
 - Training signal / loss:
-  For each training example and future slot `(h, c)`, estimate a criticality score
+  Keep the mixed objective form,
 
-  `s_(h,c) = |J(pi(y + delta e_(h,c)), y) - J(pi(y), y)| / |delta|`
+  `L_t = alpha * sum ell(yhat, y) + (1-alpha) * sum w_(t,h,c) * ell(yhat_(t,h,c), y_(t,h,c))`
 
-  where `y` is the oracle future target, `pi` is the fixed controller driven by that target, `J` is the rollout or local control objective surrogate, and `e_(h,c)` perturbs one horizon/channel.
-
-  Then fine-tune the forecaster with
-
-  `L = L_base + lambda * sum_(h,c) normalize(s_(h,c)) * ell(yhat_(h,c), y_(h,c))`
-
-  where `L_base` is the normal forecast loss and `ell` is the per-slot prediction loss.
+  but move to softer regimes such as `alpha in {0.8, 0.9}` before considering stronger weighting again.
 - Why this is the main novelty:
-  This is not generic reweighting and not full end-to-end DFL. It extracts controller sensitivity into explicit supervision over forecast slots, which is simpler to implement, easier to diagnose, and portable across backbones.
+  The paper-worthy claim is no longer “any controller sensitivity helps.” It becomes: **controller-sensitive supervision must be stabilized and validated at the cell level before it can improve forecast-then-control.** This is sharper, more honest to the negative result, and still mechanism-centered.
 
 ### Optional Supporting Component
 - Only include if truly necessary:
-  A small event auxiliary head that predicts whether each future window is in a high-risk regime such as peak, carbon spike, or reserve-stress period.
+  Replace raw cell-wise weights with coarse horizon-channel buckets if diagnostics show that exact cell weights are too noisy but rank information is still useful.
 - Input / output:
-  Backbone hidden state to event logits.
+  Raw `H x C` sensitivity map in, coarse bucketed importance map out.
 - Training signal / loss:
-  Binary or multi-label cross-entropy on event windows derived from the oracle target and known exogenous drivers.
+  Same mixed loss, but weights are bucket-level rather than raw-cell level.
 - Why it does not create contribution sprawl:
-  It exists only to stabilize the weighting signal if the raw finite-difference score is noisy. The paper still stands if this head is removed.
+  This is a single fallback simplification of the weighting signal, not a second model.
 
 ### Modern Primitive Usage
 - Which LLM / VLM / Diffusion / RL-era primitive is used:
-  A time-series foundation backbone can be used as one of the backbones tested by the method, but it is frozen or lightly adapted rather than introduced as the main contribution.
+  None in the core method.
 - Exact role in the pipeline:
-  Numeric representation backbone only.
-- Why it is more natural than an old-school alternative:
-  The point is not to invent another backbone. The point is to make an existing strong backbone decision-aware with a minimal training-side intervention.
+  Not applicable.
+- Why this is more natural than an old-school alternative:
+  The current bottleneck is label quality, not expressivity of the learner. Staying simple is the right choice.
 
 ### Integration into Base Generator / Downstream Pipeline
-The method attaches at the training objective, not at inference-time control.
-
-1. Pretrain or reuse the forecasting backbone with the usual forecast loss.
-2. Build controller-criticality labels offline from the fixed QP controller using oracle futures on the training split.
-3. Fine-tune the same forecaster with the weighted loss.
-4. At inference time, run the normal forecast -> QP pipeline with no additional planner, router, or policy network.
-
-This keeps inference simple and makes the method easy to retrofit into the current repository.
+The method attaches only at the training objective and diagnosis stage:
+1. reuse existing uniform and CSFT checkpoints for decile analysis;
+2. verify oracle alignment against environment truth;
+3. regenerate or reprocess weights if needed;
+4. rerun one softened CSFT variant;
+5. evaluate again with the unchanged `forecast -> qp_carbon -> CityLearn` pipeline.
 
 ### Training Plan
-1. Use CityLearn training windows with building-side targets such as future net demand and optional PV.
-2. Train or reuse a baseline forecaster with the current standard objective.
-3. For each sampled training window, compute controller-criticality labels by perturbing target slots and measuring downstream objective change under the fixed QP controller.
-4. Smooth and clip the raw scores so training does not collapse to a few nearest horizons.
-5. Fine-tune the forecaster with the weighted objective.
-6. Optionally repeat the same recipe on one classic backbone and one foundation backbone.
-7. Keep the controller fixed throughout the main experiments.
+1. **D1: Top-decile error analysis** on existing checkpoints and test labels.
+2. **D2: Oracle alignment sanity check** by comparing `build_oracle_forecast(...)` slices against environment-derived future values step-by-step.
+3. If D1 says the labels contain some useful ranking signal and D2 passes, build one softened label transform.
+4. Run **D3: one softened-CSFT rerun** with `alpha=0.8` and one monotone transform such as `sqrt(weight)`.
+5. Compare against uniform on overall metrics, top-decile metrics, and control KPIs.
+6. Only if this rerun shows signal, continue to heuristic baselines or matched/mismatched label ablations.
 
 ### Failure Modes and Diagnostics
-- Criticality collapses to only the nearest few steps:
-  Detect by plotting weight mass over horizons.
-  Fallback is temperature scaling, percentile clipping, and comparison to a naive horizon-decay baseline.
-- Sensitivity labels are too noisy:
-  Detect by low rank-correlation across nearby windows or seeds.
-  Fallback is local smoothing, event-window aggregation, or the optional auxiliary head.
-- Gains only appear on one backbone:
-  Detect by running the same recipe on one classic and one foundation backbone.
-  Fallback is to narrow the claim from backbone-agnostic to backbone-compatible.
-- Gains improve MSE but not control:
-  Detect by KPI delta versus the MSE baseline.
-  Fallback is to inspect whether the criticality score is aligned with the actual controller bottlenecks and revise the score definition.
+- Failure mode: CSFT still loses on top-decile error.
+  - How to detect:
+    Decile-wise MSE/MAE table using existing checkpoints.
+  - Fallback or mitigation:
+    Abandon raw finite-difference slot-wise weighting as the main route; pivot to coarser event/horizon supervision or drop the controller-aware weighting thesis.
+- Failure mode: oracle path is misaligned.
+  - How to detect:
+    exact first-20-step comparison between environment future and oracle slices.
+  - Fallback or mitigation:
+    fix alignment before interpreting any KPI gap or sensitivity labels.
+- Failure mode: label ranking exists, but weighting is too aggressive.
+  - How to detect:
+    top-decile improves weakly while overall metrics and KPIs degrade.
+  - Fallback or mitigation:
+    increase `alpha`, apply monotone soft transforms, and prefer bucketed weights over raw spikes.
+- Failure mode: even softened labels do not beat heuristic weighting.
+  - How to detect:
+    compare against manual horizon and event-window baselines after the softened rerun.
+  - Fallback or mitigation:
+    narrow the thesis to “simple control-aware heuristics suffice” and stop investing in CSFT as the main paper.
 
 ### Novelty and Elegance Argument
-The paper is focused because it makes one claim.
+The elegant version of this story is not “we added another weighting trick.” The real question is:
 
-Forecast quality should be measured and trained according to controller sensitivity, not uniform average error.
+> When controller sensitivity is used as supervision for forecasting, what makes that supervision valid rather than harmful?
 
-That is sharper than bundling forecasting, uncertainty, routing, and RL into one stack. It also fits current time-series practice better: strong pretrained or standard backbones already exist, but they still need a clean way to become decision-aware.
+The current negative result gives this paper a sharper scientific angle than the earlier optimistic proposal. The contribution becomes a small, falsifiable mechanism study: raw controller sensitivities are not automatically useful; they must be validated and stabilized before they can support forecast-then-control gains.
 
 ## Claim-Driven Validation Sketch
-### Claim 1: Controller-critical refinement improves downstream control more reliably than plain forecast training
+### Claim 1: Useful controller-aware supervision should improve the forecast cells it claims to care about
 - Minimal experiment:
-  Train the same backbone with MSE only versus the proposed refinement objective, then evaluate both with the same fixed QP controller on CityLearn.
+  Reuse existing uniform and CSFT checkpoints and evaluate decile-wise test MSE/MAE under the current test sensitivity labels.
 - Baselines / ablations:
-  myopic or no-forecast controller, MSE training, naive horizon-decay weighting, event-only weighting.
+  Uniform vs current raw-CSFT.
 - Metric:
-  cost, carbon, peak, ramping, and KPI regret relative to an oracle-forecast controller.
+  top-decile and per-decile MSE/MAE.
 - Expected evidence:
-  The proposed refinement gives a more consistent KPI gain than MSE-only training and naive weighting.
+  If CSFT does not help the highest-sensitivity decile, the raw label route is invalid.
 
-### Claim 2: The gain comes from protecting controller-critical windows rather than blanket accuracy improvement
+### Claim 2: Oracle alignment must be correct before any controller-sensitive interpretation is trusted
 - Minimal experiment:
-  Partition future slots into high-criticality and low-criticality bins, then compare forecast error and perturbation robustness for each bin.
+  Compare oracle forecast slices and environment-derived future values on the same episode/time steps.
 - Baselines / ablations:
-  MSE model versus proposed model.
+  raw oracle slices vs env truth.
 - Metric:
-  weighted error on critical slots, action deviation under perturbation, and local objective degradation around price/carbon/peak events.
+  exact equality or negligible numerical deviation for `price/load/solar` over the first several steps.
 - Expected evidence:
-  The proposed model reduces error mostly where the controller is sensitive, and this change explains the KPI improvement.
+  A trustworthy oracle path either matches exactly or reveals a fixable interface bug.
 
-### Claim 3: The method is backbone-compatible rather than tied to one model family
+### Claim 3: If the label ranking is useful, a softened weighting regime should recover better control-critical fitting than raw CSFT
 - Minimal experiment:
-  Apply the same refinement recipe to one classic backbone and one strong foundation backbone.
+  One rerun with softened weighting such as `alpha=0.8` plus `sqrt(weight)`.
 - Baselines / ablations:
-  MSE version of each backbone.
+  uniform, raw CSFT, softened CSFT.
 - Metric:
-  downstream KPI delta over each backbone's own MSE baseline across ID and outage-seed-shifted evaluation.
+  overall MSE/MAE, top-decile MSE/MAE, and `cost/carbon/peak`.
 - Expected evidence:
-  The refinement direction is consistent across backbones even if absolute gains differ.
+  softened CSFT should at least recover uniform-level aggregate forecasting while improving controller-critical slices; otherwise the direction is too weak.
 
 ## Experiment Handoff Inputs
 - Must-prove claims:
-  controller-aware forecast training matters, the effect is caused by critical-window protection, and the method is not tied to one backbone.
+  raw controller sensitivity is not enough; validated and softened controller-sensitive supervision is the only viable next step for this direction.
 - Must-run ablations:
-  MSE only, naive horizon weighting, event-only weighting, proposed criticality weighting, and at least one backbone swap.
+  existing uniform vs raw CSFT decile analysis; oracle alignment check; one softened rerun.
 - Critical datasets / metrics:
-  CityLearn 2023 with cost / carbon / peak / ramping and outage-seed shift evaluation.
+  current CityLearn chronological split, existing CSFT label files, existing GRU checkpoints, overall MSE/MAE, decile-wise MSE/MAE, and `cost/carbon/peak/ramping`.
 - Highest-risk assumptions:
-  the fixed-controller sensitivity signal must be stable enough to supervise forecasting, and the resulting gains must survive when moving from a classic model to a stronger backbone.
+  that the current labels contain a useful ranking signal at all, and that the oracle path is not broken.
 
 ## Compute & Timeline Estimate
 - Estimated GPU-hours:
-  Low for GRU-scale runs, moderate for one foundation-backbone replication. Sensitivity label generation is mostly offline controller evaluation rather than large-model training.
+  Very low for D1/D2; low for one softened rerun; still much cheaper than expanding to multi-seed or multi-backbone studies.
 - Data / annotation cost:
-  No manual labeling cost. Criticality labels come from the simulator and fixed controller.
+  None. Reuses existing checkpoints, labels, and artifacts.
 - Timeline:
-  Stage 1: stabilize the reference backbone and controller. Stage 2: build criticality labels and weighted refinement. Stage 3: run backbone and shift validation.
+  Stage 1: cheap falsification diagnostics (D1/D2). Stage 2: one softened rerun (D3). Stage 3: only then decide whether to scale, pivot, or stop.

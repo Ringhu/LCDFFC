@@ -15,7 +15,7 @@
 | R109 | M3 | controller specificity | GRU + CSFT with `qp_current` labels, eval on `qp_carbon` | test | forecast + control | MUST | TODO | matched vs mismatched labels |
 | R110 | M4 | loss stability | GRU + pure weighted loss (`alpha=0`) | val/test | forecast + control | MUST | TODO | mixed loss 对照 |
 | R111 | M4 | mechanism figure | decile-wise error reduction + average sensitivity heatmap | test | decile RMSE / MAE / heatmap | MUST | TODO | 主文关键图 |
-| R112 | M4 | learned-control eval | replay `qp_carbon` with `gru_uniform_best_r103_uniform_seed42.pt` | test | cost / carbon / peak / ramping | MUST | TODO | fairness compare: uniform checkpoint |
-| R113 | M4 | learned-control eval | replay `qp_carbon` with `gru_csft_best_r105_csft_seed42.pt` | test | cost / carbon / peak / ramping | MUST | TODO | fairness compare: CSFT checkpoint |
-| R114 | M4 | result summary | summarize R103/R105/R112/R113 for bridge handoff | test | claim status | MUST | TODO | 生成 `refine-logs/EXPERIMENT_RESULTS.md` |
+| R112 | M4 | learned-control eval | replay `qp_carbon` with `gru_uniform_best_r103_uniform_seed42.pt` | test | cost / carbon / peak / ramping | MUST | DONE | uniform control KPI: cost=31.6692, carbon=480.7741, peak=15.7291 |
+| R113 | M4 | learned-control eval | replay `qp_carbon` with `gru_csft_best_r105_csft_seed42.pt` | test | cost / carbon / peak / ramping | MUST | DONE | CSFT control KPI: cost=32.4629, carbon=489.8565, peak=16.3757 |
+| R114 | M4 | result summary | summarize R103/R105/R112/R113 for bridge handoff | test | claim status | MUST | TODO | 当前结论：CSFT 暂未支持主 thesis |
 | R115 | M5 | optional replication | second backbone uniform vs CSFT | test | cost / carbon / peak | NICE | TODO | 只有主结果稳才做 |

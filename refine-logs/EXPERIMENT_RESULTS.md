@@ -1,895 +1,136 @@
-# 初始实验结果
-
-**日期**：2026-03-19  
-**计划来源**：`refine-logs/EXPERIMENT_PLAN.md`
-
-## 本轮做了什么
-
-本轮按照 `experiment-bridge` 的要求，完成了 `M0-M2` 的最小桥接实现与首批实验：
-
-1. 新增了偏好切换评测脚本：
-   - `eval/run_preference_shift.py`
-2. 新增了偏好切换评分与汇总脚本：
-   - `eval/preference_shift_metrics.py`
-   - `eval/summarize_preference_shift.py`
-3. 新增了 4 类高层路由变体：
-   - `fixed`
-   - `heuristic`
-   - `numeric`
-   - `text-template`
-4. 新增了对应单测：
-   - `tests/test_preference_shift.py`
-
-## GPU 使用
-
-- 小测试：
-  `GPU 3`
-- 完整第一批实验：
-  `GPU 2`
-
-已完成的实际运行：
-
-- `CUDA_VISIBLE_DEVICES=3`：96 步 `text router` sanity
-- `CUDA_VISIBLE_DEVICES=2`：8 组完整 719 步实验
-
-## Sanity 阶段
-
-### M0: Sanity — PASSED
-
-短程 sanity 命令在 `GPU 3` 上通过：
-
-```bash
-CUDA_VISIBLE_DEVICES=3 python eval/run_preference_shift.py \
-  --schema /cluster/home/user1/.cache/citylearn/v2.5.0/datasets/citylearn_challenge_2023_phase_1/schema.json \
-  --checkpoint artifacts/checkpoints/gru_mse_best.pt \
-  --norm_stats artifacts/norm_stats.npz \
-  --forecast_config configs/forecast.yaml \
-  --controller_config configs/controller.yaml \
-  --output_dir /tmp/pref_shift_gpu3_sanity \
-  --tag sanity_text_gpu3 \
-  --router_type text \
-  --forecast_mode learned \
-  --device cuda:0 \
-  --max_steps 96
-```
-
-结果：
-
-- 训练 / 推理主循环正常
-- 输出文件格式正常：
-  - `*_kpis.json`
-  - `*_segments.json`
-  - `*_routes.json`
-  - `*_actions.npy`
-
-## M1: 固定权重 baseline
-
-在 `GPU 2` 上完成了 5 组完整固定权重对照：
-
-- `fixed_balanced`
-- `fixed_cost`
-- `fixed_carbon`
-- `fixed_peak`
-- `fixed_reserve`
-
-关键 KPI：
-
-| Run | cost | carbon | peak |
-|---|---:|---:|---:|
-| fixed_balanced | 30.4596 | 466.7547 | 14.9948 |
-| fixed_cost | 31.0128 | 476.7996 | 15.1639 |
-| fixed_carbon | 30.5682 | 468.2660 | 15.0019 |
-| fixed_peak | 30.5412 | 467.8788 | 14.9948 |
-| fixed_reserve | 30.6500 | 469.8930 | 15.0034 |
-
-当前信号：
-
-- 在这套 `preference-shift` 评分体系下，`fixed_balanced` 与 `fixed_carbon / fixed_reserve` 已经非常强
-- 这说明后续 router 想要立住论文主张，必须在“偏好切换适配”上明显超过这些固定变体
-
-## M2: Router 雏形
-
-在 `GPU 2` 上完成了 3 组高层路由实验：
-
-- `heuristic_router`
-- `numeric_router`
-- `text_router`
-
-关键 KPI：
-
-| Run | cost | carbon | peak |
-|---|---:|---:|---:|
-| heuristic_router | 30.6447 | 470.1035 | 15.0005 |
-| numeric_router | 31.3612 | 481.7459 | 14.9041 |
-| text_router | 31.0553 | 477.6960 | 14.9041 |
-
-## Preference-Shift 汇总
-
-基于 `fixed_balanced` reference 与“相对最佳固定策略 regret”的汇总结果：
-
-| Run | avg_preference_score | avg_regret_to_best_fixed |
-|---|---:|---:|
-| fixed_reserve | 0.8769 | 0.0012 |
-| heuristic_router | 0.8784 | 0.0026 |
-| fixed_balanced | 0.8797 | 0.0040 |
-| fixed_carbon | 0.8798 | 0.0040 |
-| fixed_peak | 0.8799 | 0.0042 |
-| text_router | 0.8849 | 0.0092 |
-| fixed_cost | 0.8968 | 0.0211 |
-| numeric_router | 0.8946 | 0.0188 |
-
-## 当前结论
-
-### 正面信号
-
-1. `preference-shift` 评测桥已经搭起来了
-2. 低层 `forecast + QP` 在新评测脚本下保持稳定
-3. `heuristic / numeric / text` 三类 router 都已经能跑完整 episode，并产出 parseable 结果
-4. 第二版 `text_router_v2` 已经在完整 719 步实验中跑通
-
-### 负面信号
-
-1. 当前 `text-template` router 没有超过最佳固定权重
-2. 当前 `numeric` router 也没有超过最佳固定权重
-3. 当前 `heuristic` router 虽然优于 `text / numeric`，但仍然没有稳定优于最佳固定权重
-
-### 对论文主张的含义
-
-这轮结果说明：
-
-- 当前“语言条件化高层路由”这个主张还**没有被实验支撑起来**
-- 但这并不是坏事，因为它已经在第一轮最小实验里被明确暴露出来
-- 这恰好说明 `experiment-bridge` 起到了作用：先用最小代价检验 thesis，而不是继续盲目扩架构
-
-## 第二版 router 改进（text_v2）
-
-在第一轮结果基础上，进一步做了第二版改进：
-
-1. 把 `text_v1` 的极端关键词映射改成更平滑的文本条件候选选择
-2. 补充了“相对最佳单一固定策略”的汇总口径，避免只看“regime 级最优固定策略上界”
-3. 在 `GPU 3` 上完成短程 sanity，在 `GPU 2` 上完成完整 719 步实验
-
-第二版关键结果：
-
-| Run | avg_preference_score | avg_regret_to_best_fixed | avg_regret_to_best_single_fixed |
-|---|---:|---:|---:|
-| fixed_reserve | 0.876931 | 0.001224 | 0.000000 |
-| heuristic_router | 0.878355 | 0.002647 | 0.001424 |
-| text_router (v1) | 0.884912 | 0.009205 | 0.007981 |
-| text_router_v2 | 0.876864 | 0.001157 | -0.000067 |
-
-含义：
-
-- `text_router_v2` 已经明显优于 `text_router v1`
-- `text_router_v2` 现在**略优于最佳单一固定策略**
-- 但 `text_router_v2` 仍然**没有超过“按 regime 选择最佳固定策略”的上界**
-
-因此，当前更准确的结论是：
-
-> 第二版已经让“语言条件化路由优于固定权重”第一次出现了正信号，但这条主张还不够稳，还需要继续扩大差距并验证鲁棒性。
-
-## 第三版 router 与 M4 结果
-
-### text_router_v3
-
-为了继续放大 `v2` 的优势，又实现了 `text_router_v3`：
-
-- 更强调“文本主偏好必须保持主导”
-- 用 bounded context adjustment 替代过强的候选 profile 竞争
-- 目标是减少上下文把文本主意图反客为主的情况
-
-完整 719 步结果：
-
-| Run | avg_preference_score | avg_regret_to_best_fixed | avg_regret_to_best_single_fixed |
-|---|---:|---:|---:|
-| text_router_v2 | 0.876864 | 0.001157 | -0.000067 |
-| text_router_v3 | 0.878693 | 0.002986 | 0.001762 |
-
-结论：
-
-- `text_router_v3` 没有继续提升，反而比 `v2` 更差
-- 当前最优文本路由仍然是 `text_router_v2`
-- 这说明第二轮改进后的方向不应该再盲目继续“强化文本先验”，而应回到更细的协议与上下文表示设计
-
-### M4：fallback 鲁棒性检查
-
-对当前最优的 `text_router_v2`，做了更强的 corruption 注入：
-
-- corruption 频率：每 `12` 步
-- corruption 模式：`extreme_peak`
-- 对比：
-  - `route_fallback = none`
-  - `route_fallback = heuristic`
-
-结果：
-
-| Run | cost | carbon | peak | ramping |
-|---|---:|---:|---:|---:|
-| text_v2_corrupt12_none | 30.5747 | 468.4389 | 14.9948 | 856.6183 |
-| text_v2_corrupt12_fallback | 30.5831 | 468.5653 | 14.9948 | 856.5503 |
-
-补充统计：
-
-- 两组实验都注入了 `59` 次 corruption
-- fallback 版本中 `59` 次 corruption 全部触发了 heuristic fallback
-- 但 KPI 差异仍然很小
-
-结论：
-
-- 当前 corruption 设定下，fallback 的保护作用没有形成显著指标差异
-- 更合理的解释不是“fallback 没用”，而是：
-  1. 当前低层 `forecast + QP` 本身已经比较稳
-  2. 当前 chosen corruption mode 还不够贴近真正会破坏控制质量的高层路由失效
-
-因此，`M4` 当前状态应被视为：
-
-> 已经实现并完成首轮实验，但目前结论仍偏弱，后续需要改成更贴近真实路由失效的 corruption protocol。
-
-## 经 review 选中的下一版：text_router_v4
-
-在 `v1-v3` 结果基础上，做了一次显式的本地 review，结论是：
-
-> 不再继续让语言层自由合成连续权重，而是让语言层优先在“已经被实验验证过较强”的 fixed experts 之间做选择 / 轻量混合。
-
-基于这条 reviewed idea，实现了：
-
-- `text_router_v4`
-
-它的核心思想是：
-
-- 文本先决定主偏好
-- 主偏好再映射到一组经过实验验证的 expert profiles
-- 路由层只在这些 expert 之间做受限选择与轻量混合，而不是完全自由生成
-
-完整 GPU2 结果：
-
-| Run | avg_preference_score | avg_regret_to_best_fixed | avg_regret_to_best_single_fixed |
-|---|---:|---:|---:|
-| fixed_reserve | 0.876931 | 0.001224 | 0.000000 |
-| heuristic_router | 0.878355 | 0.002647 | 0.001424 |
-| text_router_v2 | 0.876864 | 0.001157 | -0.000067 |
-| text_router_v3 | 0.878693 | 0.002986 | 0.001762 |
-| text_router_v4 | 0.876622 | 0.000914 | -0.000309 |
-
-结论：
-
-- `text_router_v4` 比 `text_router_v2` 更好
-- `text_router_v4` 继续优于最佳单一固定控制器
-- `text_router_v4` 也进一步缩小了与 regime-wise best fixed 上界的差距
-
-这意味着：
-
-> 当前最优的文本路由版本已经从 `v2` 更新为 `v4`，并且这次改进不是盲调，而是一次有 review 支撑的改进方向。
-
-## 是否可以进入 auto-review-loop
-
-- 当前状态：`YES`
-- 原因：
-  - 已有完整实现
-  - 已有第一批 parseable 结果
-  - 已经出现明确的正负信号，适合进入下一轮 review / refine
-
-## 建议的下一步
-
-优先顺序：
-
-1. 保留 `text_router_v4` 作为当前最佳版本
-2. 继续分析 `text_router_v4` 与 regime-wise best fixed 上界之间的剩余差距
-3. 对 `preference-shift` 协议做更真实的 regime 设计，减少过于人工的切换
-4. 重做 `M4` 的 corruption protocol，使其更贴近真实高层路由失效
-
-## `text_router_v4` 是否已经是最好
-
-这次专门把“最好”拆成两个层次来判断：
-
-1. **它是否是当前已经验证过的文本路由里最强的版本**
-2. **它是否已经可以被宣称为全局最优或没有进一步改进空间**
-
-结论是：
-
-> `text_router_v4` 已经可以固定为 **当前已验证的最佳文本路由版本**，但还**不能**宣称它已经是“做到头了”的全局最优。
-
-### 为什么可以固定为当前 best
-
-在同一套 `GPU2`、同一条 `preference-shift` 协议、同一评分脚本下，`v4` 同时满足：
-
-| Run | avg_preference_score | avg_regret_to_best_fixed | avg_regret_to_best_single_fixed |
-|---|---:|---:|---:|
-| text_router_v2 | 0.876864 | 0.001157 | -0.000067 |
-| text_router_v3 | 0.878693 | 0.002986 | 0.001762 |
-| text_router_v4 | 0.876622 | 0.000914 | -0.000309 |
-
-这意味着：
-
-- 在当前已测试的文本路由候选中，`v4` 的 `avg_preference_score` 最低
-- `v4` 对 regime-wise best fixed 上界的平均 regret 也最低
-- `v4` 继续优于最佳单一固定控制器 `fixed_reserve`
-
-更细一层看，`v4` 相对 `v2` 的优势不是只体现在单一平均数上：
-
-- `cost` 段：`v4` 更好
-- `carbon` 段：`v4` 更好
-- `peak` 段：`v4` 略好
-- `reserve` 段：`v2` 仍略好
-
-因此，`v4` 不是“四段全胜”，但它在当前汇总目标下给出了最好的整体折中。
-
-### 为什么不能把它说成全局最优
-
-如果要说“已经做到最好”，至少需要满足下面两件事之一：
-
-1. 它已经打平或逼近到几乎没有差距的可达上界
-2. 在更强的后续搜索里，没有再找到更好的合理变体
-
-当前两条都不成立。
-
-第一，`v4` 仍然没有追平当前协议下的 regime-wise best fixed 上界：
-
-- `text_router_v4`: `avg_regret_to_best_fixed = 0.000914`
-
-这个值虽然很小，但它是**正数**，说明仍然存在可见剩余差距。
-
-第二，分段结果也明确说明它还存在局部短板：
-
-- 相比 `v2`，`v4` 在 `reserve` 段仍然更差
-- 相比 `fixed_reserve`，`v4` 在 `carbon` 段并不占优
-
-所以更准确的说法应该是：
-
-> `text_router_v4` 是**当前搜索和验证范围内的最优文本路由**，不是已经被证明无法再改进的最终最优。
-
-### 当前固定方式
-
-为了把这个状态固定下来，同时避免后续实验继续手工写版本号，代码里新增了：
-
-- `CURRENT_BEST_TEXT_ROUTER = "text_v4"`
-- `make_router("text_best")`
-- `eval/run_preference_shift.py --router_type text_best`
-
-因此，从这次之后：
-
-- `text_v4` 是当前已验证最佳版本
-- 新实验默认推荐直接用 `text_best`
-- 只有当后续实验在同一协议下明确超过 `v4` 时，才更新这个别名
-
-## 继续往下的实验建议
-
-在当前证据下，最合理的后续顺序不是再盲做 `v5`，而是按下面顺序推进：
-
-1. **重做 `M4` 的 corruption protocol**
-   目标不是再注入一个泛化的 `extreme_peak`，而是构造更贴近真实高层路由失效的错误：
-   - 在 `reserve` 段强行丢掉 `reserve_soc`
-   - 在 `carbon` 段故意路由到 cost-heavy expert
-   - 在跨 regime 切换点注入 stale instruction / stale expert
-
-2. **做 `text_best` 的 segment-level error attribution**
-   重点回答：
-   - 为什么 `v4` 在 `reserve` 段仍输给 `v2`
-   - 为什么它与 regime-wise best fixed 上界之间还剩 `0.000914`
-   - 剩余误差到底来自 instruction parse、expert mapping，还是 blending / persistence
-
-3. **做更真实的 preference-shift protocol**
-   当前四段硬切换还是太人工。下一轮应该增加：
-   - 更长的稳定段
-   - 渐变型偏好变化
-   - 更接近 operator language 的 instruction 重写
-
-4. **只有在上面三步完成后，再考虑 `v5`**
-   到那时如果还要做下一版，也不该再回到“自由生成连续权重”，而是围绕：
-   - expert persistence
-   - switch hysteresis
-   - regime transition guard
-   - segment summary context
-   这类更有证据支撑的方向推进。
-
-## 新一轮 M4：transition-aware corruption
-
-这轮没有继续沿用旧版 `extreme_peak` 周期注入，而是先做了一次显式 review，再把 `M4` 改成更贴近真实高层路由失效的协议。
-
-### reviewed 决策
-
-新增 review note：
-
-- `refine-logs/auto-review/2026-03-20-m4-next-step.md`
-
-核心结论是：
-
-> 不再用泛化的极端权重去破坏系统，而是模拟更像真实高层路由失败的情形，例如 regime 切换后的短时错误 expert 选择、`reserve` 段丢掉 reserve 约束等。
-
-### 这轮新增了什么
-
-1. 在 `eval/run_preference_shift.py` 里新增了两类 corruption：
-   - `wrong_expert`
-   - `transition_wrong_expert`
-2. 新增了 `--corruption_window`
-   - 用来指定 regime 切换后错误策略持续多少步
-3. 新增了一个分段误差归因脚本：
-   - `eval/analyze_preference_shift_gap.py`
-   - 输入：
-     - `--results_dir`
-     - `--summary_path`
-     - `--target_tag`
-     - `--compare_tags`
-   - 输出：
-     - 默认写到 `{results_dir}/{target_tag}_gap_analysis.json`
-4. 对应单测已补进 `tests/test_preference_shift.py`
-
-### GPU 使用
-
-- 小测试：`GPU 3`
-- 完整实验：`GPU 2`
-
-### GPU 3 sanity
-
-命令使用：
-
-```bash
-CUDA_VISIBLE_DEVICES=3 python eval/run_preference_shift.py \
-  --schema /cluster/home/user1/.cache/citylearn/v2.5.0/datasets/citylearn_challenge_2023_phase_1/schema.json \
-  --checkpoint artifacts/checkpoints/gru_mse_best.pt \
-  --norm_stats artifacts/norm_stats.npz \
-  --forecast_config configs/forecast.yaml \
-  --controller_config configs/controller.yaml \
-  --output_dir /tmp/pref_shift_transition_gpu3_sanity \
-  --tag sanity_text_best_transition_none_gpu3 \
-  --router_type text_best \
-  --forecast_mode learned \
-  --device cuda:0 \
-  --max_steps 120 \
-  --corruption_mode transition_wrong_expert \
-  --corruption_window 12 \
-  --route_fallback none
-```
-
-以及对应的 `heuristic fallback` 版本。
-
-sanity 结果确认了：
-
-- `transition_wrong_expert` 协议工作正常
-- `120` 步短程里共注入 `36` 次 corruption
-- fallback 版本 `36` 次 corruption 全部触发 heuristic fallback
-- 输出结构仍保持完整：
-  - `*_kpis.json`
-  - `*_segments.json`
-  - `*_routes.json`
-  - `*_actions.npy`
-
-### GPU 2 完整实验
-
-这轮完整对照跑的是：
-
-- `text_best_transition24_none`
-- `text_best_transition24_fallback`
-
-设置：
-
-- router：`text_best`
-- corruption mode：`transition_wrong_expert`
-- corruption window：`24`
-
-结果：
-
-| Run | cost | carbon | peak | ramping |
-|---|---:|---:|---:|---:|
-| clean text_best | 30.5693 | 468.3415 | 14.9948 | 858.7306 |
-| text_best_transition24_none | 30.5744 | 468.3799 | 15.0067 | 859.5113 |
-| text_best_transition24_fallback | 30.5785 | 468.4277 | 14.9948 | 858.9729 |
-
-补充统计：
-
-- 两组完整实验都注入了 `72` 次 corruption
-- fallback 版本中 `72` 次 corruption 全部触发 heuristic fallback
-
-### 这轮 M4 的解释
-
-和旧版 `extreme_peak` 协议相比，这轮终于出现了更可解释的保护模式：
-
-- **无 fallback**：
-  - `peak` 相比 clean baseline 恶化了 `+0.0119`
-  - `ramping` 恶化了 `+0.7807`
-- **有 heuristic fallback**：
-  - `peak` 回到了 clean baseline 水平
-  - `ramping` 只恶化 `+0.2423`
-
-代价是：
-
-- `cost` 与 `carbon` 相对 clean baseline 略有增加
-
-因此，这轮 `M4` 更准确的结论是：
-
-> 新的 transition-aware corruption 协议已经把 fallback 的作用从“几乎看不见”变成了“可解释的目标保护 tradeoff”：它确实在高层切换失效下保护了 `peak / ramping`，但会付出一些 `cost / carbon` 代价。
-
-这比旧版 `M4` 更强，因为它不再是“几乎没有差异”，而是出现了符合控制直觉的结构化差异。
-
-但它仍然不是最终结论，因为：
-
-- 差距还不算特别大
-- fallback 当前更像“保护 peak / smoothness”的策略，而不是全指标都更优
-
-因此当前最准确的状态是：
-
-> `M4` 已从“证据偏弱”推进到“已有可解释正信号，但还需要更强协议继续验证”。
-
-## `text_best` 的 segment-level 误差归因
-
-这轮还新增了：
-
-- `eval/analyze_preference_shift_gap.py`
-
-并对当前 clean best run 做了归因，输出文件为：
-
-- `/tmp/pref_shift_gpu2/text_router_v4_gap_analysis.json`
-
-### 归因结论 1：`text_best` 相比 `v2` 的优势主要来自前三段
-
-相对 `text_router_v2`，`text_best` 的平均优势是：
-
-- `avg_score_delta_vs_target = 0.000242`
-
-拆开看：
-
-- `cost` 段：`text_best` 更好
-- `carbon` 段：`text_best` 更好
-- `peak` 段：`text_best` 略好
-- `reserve` 段：`v2` 仍更好
-
-也就是说：
-
-> `text_best` 之所以整体优于 `v2`，并不是因为它把每一段都做对了，而是它在 `cost / carbon / peak` 三段累计赢得更多，而 `reserve` 仍然是当前最明显的局部短板。
-
-### 归因结论 2：`text_best` 相比 `fixed_reserve` 的剩余差距并不均匀
-
-相对 `fixed_reserve`，`text_best`：
-
-- 在 `cost` 段更好
-- 在 `peak` 段更好
-- 在 `reserve` 段更好
-- 但在 `carbon` 段更差
-
-这说明当前 `text_best` 离 regime-wise best fixed 上界的剩余差距，不是“四段都差一点”，而更像：
-
-> `reserve` 还没有完全稳定，`carbon` 段的 expert mapping / blending 也还存在结构性可改空间。
-
-### 这对下一步 `v5` 的含义
-
-这轮归因进一步说明：
-
-- 不应该回到自由生成连续权重
-- 下一版如果要做，应该围绕：
-  - `reserve` 段保护
-  - `carbon` 段 expert 选择
-  - regime transition guard / persistence
-
-也就是说，下一步不该是“更会读文本”，而应是：
-
-> 更好地在 regime 切换和局部短板上做 expert persistence 与 switching control。
-
-## targeted ablation：`reserve_drop_guard` vs `carbon_misroute`
-
-在 transition-aware corruption 之后，下一步没有直接做 `v5`，而是先按 review note：
-
-- `refine-logs/auto-review/2026-03-20-targeted-ablation-next-step.md`
-
-做了两类更窄的 targeted ablation，用来回答一个更具体的问题：
-
-> 当前 `text_best` 的剩余误差，主要是因为 `reserve` 保护不足，还是因为 `carbon` 段错误路由？
-
-### 这轮新增了什么
-
-在 `eval/run_preference_shift.py` 中新增了两个 regime-specific corruption：
-
-- `reserve_drop_guard`
-  - 只在 `reserve` 段生效
-  - 移除 `reserve_soc`
-- `carbon_misroute`
-  - 只在 `carbon` 段生效
-  - 强制把高层权重推向 cost-heavy profile
-
-对应单测已经补到 `tests/test_preference_shift.py`。
-
-### GPU 使用
-
-- 小测试：`GPU 3`
-- 完整实验：`GPU 2`
-
-### GPU 3 sanity
-
-这轮 short sanity 跑了 4 组：
-
-- `sanity_reserve_drop_guard_none_gpu3`
-- `sanity_reserve_drop_guard_fallback_gpu3`
-- `sanity_carbon_misroute_none_gpu3`
-- `sanity_carbon_misroute_fallback_gpu3`
-
-结果确认：
-
-- `reserve_drop_guard` 在 120 步短程中命中 `30` 步
-- `carbon_misroute` 在 120 步短程中命中 `30` 步
-- fallback 版本均实现了 `30/30` 全接管
-
-这说明这两个 targeted corruption 都按设计命中了目标 regime，而不是随机扰动整个 episode。
-
-### GPU 2 完整实验
-
-完整 719 步对照跑了 4 组：
-
-- `text_best_reserve_drop_none`
-- `text_best_reserve_drop_fallback`
-- `text_best_carbon_misroute_none`
-- `text_best_carbon_misroute_fallback`
-
-所有完整实验都在 `text_best` 上运行，clean baseline 仍使用当前 best：
-
-| Run | cost | carbon | peak | ramping |
-|---|---:|---:|---:|---:|
-| clean text_best | 30.5693 | 468.3415 | 14.9948 | 858.7306 |
-| reserve_drop_none | 30.6324 | 469.5827 | 15.1640 | 859.6667 |
-| reserve_drop_fallback | 30.5752 | 468.4454 | 14.9948 | 858.7073 |
-| carbon_misroute_none | 30.6446 | 469.7692 | 15.0031 | 861.8297 |
-| carbon_misroute_fallback | 30.5818 | 468.5174 | 15.0001 | 859.8567 |
-
-补充统计：
-
-- `reserve_drop_guard` 两组都命中了 `182` 步 corruption
-- `carbon_misroute` 两组都命中了 `179` 步 corruption
-- 两个 fallback 版本都实现了全量接管
-
-### 关键结论 1：`reserve` 是当前更强的主敏感点
-
-相对 clean baseline：
-
-- `reserve_drop_none`
-  - `cost +0.0631`
-  - `carbon +1.2412`
-  - `peak +0.1692`
-  - `ramping +0.9362`
-- `carbon_misroute_none`
-  - `cost +0.0753`
-  - `carbon +1.4277`
-  - `peak +0.0083`
-  - `ramping +3.0991`
-
-这说明两者的伤害形态不同：
-
-- `reserve_drop_guard` 对 `peak` 的破坏更强，而且直接打到了当前最敏感的 `reserve` 段
-- `carbon_misroute` 对 `carbon` 和 `ramping` 影响更大，但对 `peak` 的直接伤害没有 `reserve_drop_guard` 那么强
-
-从“当前论文主结果最怕什么”这个角度看，`reserve_drop_guard` 更像第一主敏感项。
-
-### 关键结论 2：fallback 对 `reserve` 错误的修复更彻底
-
-`reserve_drop_guard` 下：
-
-- 无 fallback：
-  - `reserve_gap = 0.0822`
-  - `peak = 15.1640`
-- 有 fallback：
-  - `reserve_gap = 0.0000`
-  - `peak = 14.9948`
-
-也就是说：
-
-> heuristic fallback 基本把 `reserve_drop_guard` 带来的结构性伤害吃回去了，不只是平均 KPI 好一点，而是直接把 `reserve_gap` 从明显违规拉回到 0。
-
-这是一条比上一轮 transition-aware corruption 更强的证据。
-
-### 关键结论 3：`carbon` 是次要但真实存在的误差来源
-
-`carbon_misroute` 下：
-
-- 无 fallback：
-  - `carbon +1.4277`
-  - `ramping +3.0991`
-- 有 fallback：
-  - `carbon +0.1759`
-  - `ramping +1.1261`
-
-这说明：
-
-> `carbon` 段错路由确实会拖累系统，而且 fallback 能显著缓解，但它更像“第二层问题”，没有 `reserve` 那样直接主导 `peak` 与 reserve safety。
-
-### 这轮对 `v5` 的真实含义
-
-这轮 targeted ablation 把下一步方向收得更窄了。
-
-当前最合理的判断是：
-
-1. 如果只做一个最重要的 router 改进，应该优先解决 **reserve-aware guard / persistence**
-2. `carbon` 仍然值得修，但更像第二优先级
-3. 下一版不该泛泛追求“更强语言理解”，而应优先做：
-   - reserve-aware persistence
-   - reserve transition guard
-   - 然后再考虑 carbon expert remapping / blending
-
-所以这轮真正回答了上轮留下的问题：
-
-> 当前 `text_best` 的剩余误差不是平均分散在所有 regime 上，而是以 `reserve` 为第一敏感点、`carbon` 为第二敏感点。
-
-## reviewed `v5 / v6`：reserve-aware release guard
-
-在 targeted ablation 明确了 `reserve` 是第一主敏感点之后，这轮没有直接继续做更大的 router 结构，而是先连续做了两轮经过 review 的窄改版：
-
-- `refine-logs/auto-review/2026-03-20-v5-next-step.md`
-- `refine-logs/auto-review/2026-03-20-v6-next-step.md`
-
-两轮 review 的共同原则都是：
-
-> 不去碰更大的语言解析与 carbon remapping，而是先只验证一件事：从 `reserve` 段退出时，是否应该保留一小段 reserve-aware release guard。
-
-### `text_v5`：方向正确，但 guard 过宽
-
-`v5` 的设计是：
-
-- 在 `reserve` 段结束后保留一段 reserve-aware persistence
-- 并在后续 cost/carbon/peak 段里继续加 reserve floor
-
-完整 GPU2 结果：
-
-| Run | avg_preference_score | avg_regret_to_best_fixed | avg_regret_to_best_single_fixed |
-|---|---:|---:|---:|
-| text_router_v4 | 0.876622 | 0.000914 | -0.000309 |
-| text_router_v5 | 0.876862 | 0.001154 | -0.000070 |
-
-分段对比 `v4 -> v5`：
-
-- `carbon` 段略有改善
-- `reserve` 段也略有改善
-- 但 `cost` 段明显更差
-
-因此最准确的解释是：
-
-> `v5` 没有否定 reserve-aware 方向本身，而是说明 guard 范围太宽，已经把本该只在 reserve 退出时保留的保护，扩散到了 cost 段。
-
-这和路由统计是一致的：
-
-- `v5` 在 `cost` / `carbon` 段都维持了明显更高的 `reserve_soc`
-
-所以：
-
-- `v5` **没有超过** `v4`
-- `text_best` **不升级**
-
-### `text_v6`：guard 收窄后，与 `v4` 完全打平
-
-基于 `v5` 的失败模式，又做了一次 review，把 `v6` 收窄为：
-
-- 更短的 reserve release 窗口
-- 只在 `soc` 仍偏低时才触发
-- guard 强度也更低
-
-完整 GPU2 结果：
-
-| Run | avg_preference_score | avg_regret_to_best_fixed | avg_regret_to_best_single_fixed |
-|---|---:|---:|---:|
-| text_router_v4 | 0.876622 | 0.000914 | -0.000309 |
-| text_router_v6 | 0.876622 | 0.000914 | -0.000309 |
-
-更进一步，gap analysis 显示：
-
-- `v6` 相对 `v4` 的四段 delta 全部是 `0.0`
-- route stats 也完全一致
-
-这说明：
-
-> `v6` 把 guard 收窄之后，已经窄到在当前 clean preference-shift 协议里几乎不触发，因此最终效果与 `v4` 完全一致。
-
-也就是说：
-
-- `v5` 是“有效但过宽”
-- `v6` 是“足够窄，但在当前协议下等于不生效”
-
-### 当前结论
-
-这两轮 reviewed 改进给出的结论其实很清楚：
-
-1. reserve-aware release guard 这个大方向并没有被否定
-2. 但在当前 clean protocol 上：
-   - 稍微宽一点就会伤到 `cost`
-   - 稍微窄一点又会退化成和 `v4` 完全一样
-3. 因此，当前最优 router **仍然是 `text_v4`**
-4. `CURRENT_BEST_TEXT_ROUTER` 暂时**不更新**
-
-### 这对下一步的含义
-
-`v5 / v6` 的结果说明，下一步如果还继续往前推，不能再只做“静态 release guard”。
-
-更合理的下一步应该是：
-
-- `reserve-aware persistence + hysteresis`
-  或
-- `reserve-aware persistence + explicit transition trigger`
-
-也就是说，后续如果还有 `v7`，它不该只是继续改一个固定窗口，而应当回答：
-
-> 到底在什么条件下，才应该从 reserve 模式真正释放出来，而不是靠一个静态步数窗口硬控。
-
-## reviewed `v7`：regime-aware transition trigger
-
-在 `v5 / v6` 之后，又做了一轮新的 reviewed 改动：
-
-- `refine-logs/auto-review/2026-03-20-v7-next-step.md`
-
-这轮 review 的结论是：
-
-> 不能再只调一个更大或更小的固定窗口，而要让 reserve release 逻辑显式区分“下一个 regime 是谁”。
-
-因此 `text_v7` 的设计是：
-
-- 离开 `reserve` 后：
-  - 如果进入 `cost` 段，只保留 reserve floor，不额外混 reserve 权重
-  - 如果进入 `carbon / peak` 段，才允许小幅 reserve-aware blending
-
-也就是说，`v7` 不是再做一个静态 release guard，而是一次 **regime-aware transition trigger** 尝试。
-
-### 本地与 GPU 验证
-
-- 本地单测已通过
-- `GPU 3` sanity 已通过
-- `GPU 2` clean protocol 完整评测已完成
-
-### `v7` 结果
-
-完整 GPU2 结果：
-
-| Run | avg_preference_score | avg_regret_to_best_fixed | avg_regret_to_best_single_fixed |
-|---|---:|---:|---:|
-| text_router_v4 | 0.876622 | 0.000914 | -0.000309 |
-| text_router_v6 | 0.876622 | 0.000914 | -0.000309 |
-| text_router_v7 | 0.876622 | 0.000914 | -0.000309 |
-
-进一步的 gap analysis 也显示：
-
-- `v7` 相对 `v4` 的四段 delta 全部为 `0.0`
-- `v7` 的 route stats 与 `v4 / v6` 一致
-
-因此，这轮最准确的结论不是“`v7` 失败”，而是：
-
-> `v7` 证明了 regime-aware transition trigger 这种局部修补方向，在当前 clean preference-shift 协议上已经进入饱和区。它没有把系统变坏，但也没有带来超过 `v4` 的任何额外增益。
-
-### 这对整体研究状态的含义
-
-到这一轮为止，当前实验状态已经比较清楚了。
-
-#### 已经可以认为“够了”的部分
-
-1. **主结果已经成立**
-   - `text_v4` 稳定优于最佳单一固定控制器
-   - 这说明“语言条件化高层路由优于单一固定权重”已经有实证支撑
-
-2. **失败模式已经被拆清楚**
-   - `reserve` 是第一主敏感点
-   - `carbon` 是第二主敏感点
-
-3. **fallback 的作用已经被证明**
-   - 在 transition-aware corruption 和 targeted ablation 下都出现了可解释的保护模式
-
-4. **局部 reserve release guard 调优已经摸到边界**
-   - `v5` 过宽会伤到 `cost`
-   - `v6` 过窄会退化成 `v4`
-   - `v7` 做了 regime-aware trigger，也仍然和 `v4` 打平
-
-#### 仍然需要改进的部分
-
-1. **还没有追平 regime-wise best fixed 上界**
-   - 当前 best `v4` 仍有 `avg_regret_to_best_fixed = 0.000914`
-
-2. **局部 router tweak 已经不再产生增益**
-   - 继续手工细调 release guard，很可能只是在做低收益搜索
-
-3. **论文下一步需要从“继续局部打磨 router”切到“更高层的验证”**
-   - 例如更真实的 protocol
-   - 或者更高层次的 review / narrative 固化
-
-### 当前阶段总结
-
-一句话总结就是：
-
-> 现在不是“router 还没做出来”，而是“当前 best router 已经做出来了，局部微调也试过了，接下来该从局部调参切到更高层次的验证与收敛”。
-
-因此，当前最合理的下一步不再是立刻做 `v8`，而是：
-
-1. 锁定 `text_v4` 为当前 best
-2. 把当前实验故事整理成 paper-facing 主结果、误差分析和安全性分析
-3. 再决定是进入：
-   - `OOD / transfer`
-   - 还是一轮更高层的 auto-review / paper-facing review
+# Initial Experiment Results
+
+**Date**: 2026-03-25
+**Plan**: `refine-logs/EXPERIMENT_PLAN.md`
+**Topic**: CSFT pilot failure diagnosis
+
+## Raw Data Table
+
+### Forecast-side comparison
+
+| System | Val loss | Test loss* | Overall MSE | Overall MAE | Price MSE | Load MSE | Solar MSE |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| GRU + uniform | 0.134295 | 0.203695 | 1.132944 | 0.363535 | 0.814345 | 2.552710 | 0.031776 |
+| GRU + CSFT (`alpha=0.5`) | 0.121692 | 0.181953 | 1.190106 | 0.393872 | 0.911787 | 2.601809 | 0.056723 |
+
+\* `test_loss` is not the cleanest cross-mode metric because CSFT uses weighted mixed loss while uniform uses the uniform version of the same loss function. The more reliable cross-mode metrics are `overall_mse` / `overall_mae` and per-target MSE/MAE.
+
+### Control-side comparison (`qp_carbon` replay)
+
+| System | Cost | Carbon | Peak | Ramping | Avg Net Load |
+|---|---:|---:|---:|---:|---:|
+| Oracle forecast + `qp_carbon` | 33.833866 | 511.593814 | 16.227163 | 1020.678528 | 1.284337 |
+| Uniform forecast + `qp_carbon` | 31.669215 | 480.774130 | 15.729058 | 850.380737 | 1.280156 |
+| CSFT forecast + `qp_carbon` | 32.462909 | 489.856484 | 16.375679 | 861.327881 | 1.263511 |
+
+### Label distribution snapshot
+
+| Split | Samples | Raw mean | Raw max | Normalized mean | Normalized max |
+|---|---:|---:|---:|---:|---:|
+| Train | 456 | 0.046178 | 2.138771 | 0.765338 | 37.492641 |
+| Val | 62 | 0.050428 | 2.113926 | 0.838696 | 36.289032 |
+| Test | 61 | 0.039599 | 2.308118 | 0.672095 | 71.900040 |
+
+## Key Findings
+
+1. **CSFT does not beat the uniform baseline on forecast metrics.**
+   - Observation: `overall_mse` worsens from `1.132944` to `1.190106` (`+5.0%`), and `overall_mae` worsens from `0.363535` to `0.393872` (`+8.3%`). Price/load/solar MSE all worsen, with solar MSE degrading the most (`0.031776 -> 0.056723`, about `+78.5%`).
+   - Interpretation: the current weighting scheme is not reallocating capacity in a useful way; it is simply hurting forecast quality.
+   - Implication: the current CSFT implementation does **not** support the claim that controller-sensitive weighting helps the forecasting model.
+   - Next step: compute top-sensitivity-decile error for uniform vs CSFT. If CSFT does not improve even the most sensitive cells, the label/weighting design is likely wrong rather than merely too strong.
+
+2. **CSFT also loses on the final control KPIs.**
+   - Observation: compared with uniform, CSFT is worse on `cost` (`31.6692 -> 32.4629`, `+2.5%`), `carbon` (`480.7741 -> 489.8565`, `+1.9%`), `peak` (`15.7291 -> 16.3757`, `+4.1%`), and `ramping` (`850.3807 -> 861.3279`, `+1.3%`).
+   - Interpretation: even after plugging forecasts into the real `qp_carbon` loop, CSFT does not recover a control-side gain.
+   - Implication: the current main thesis is **not supported** in this pilot.
+   - Next step: do not scale to more seeds/backbones yet. Enter route-A failure diagnosis first.
+
+3. **The label distribution is extremely spiky, especially on test.**
+   - Observation: normalized max weight is about `37.5` on train and `71.9` on test while normalized means stay below `1`.
+   - Interpretation: the finite-difference sensitivity map is concentrating too much mass on a very small number of cells. This can make optimization brittle and degrade overall learning.
+   - Implication: the current weighting may be too sharp for `alpha=0.5`.
+   - Next step: test stronger clipping / softer transforms (`sqrt`, `log1p`, temperature) and a weaker mix such as `alpha=0.8` or `0.9` before changing the whole idea.
+
+4. **The current oracle result is suspiciously worse than the learned uniform baseline.**
+   - Observation: oracle + `qp_carbon` is worse than learned-uniform on `cost`, `carbon`, `peak`, and especially `ramping`. For example, oracle `cost=33.8339` vs uniform `31.6692`, oracle `ramping=1020.68` vs uniform `850.38`.
+   - Interpretation: something is off in the current “oracle” notion. Either the oracle series is not perfectly aligned with the environment timeline, or the raw future signals are less controller-friendly than the smoothed learned forecast, or the controller/eval interface still has a mismatch.
+   - Implication: oracle gap is currently **not trustworthy** as a paper argument. This is a high-priority diagnosis item before using oracle as an upper bound.
+   - Next step: log the first 20 steps of env-true future `price/load/solar` and compare them to `build_oracle_forecast(...)` slices exactly. If they are not identical, fix alignment before any further interpretation.
+
+5. **Val loss improves while test MSE/MAE worsen, which suggests the optimization target itself may be mis-specified.**
+   - Observation: CSFT has better validation loss (`0.121692` vs `0.134295`) but worse held-out forecast metrics and worse downstream control.
+   - Interpretation: the weighted validation objective may be rewarding the wrong regions, or the model is overfitting to unstable sensitivity labels.
+   - Implication: “better weighted loss” is not evidence of a better method here.
+   - Next step: add per-horizon / per-target and top-decile metrics instead of relying on the weighted validation loss alone.
+
+## Route-A Failure Diagnosis
+
+### Likely problem 1: the labels are too sharp / too noisy
+- Why this is plausible:
+  - label maxima are very high relative to the mean
+  - CSFT hurts all three target metrics rather than making a clean tradeoff
+- Most informative diagnostic:
+  - bucket future cells by sensitivity decile and compare uniform vs CSFT error **within those buckets**
+- What would confirm it:
+  - if CSFT does not improve the highest-sensitivity bucket, then the label is not useful signal
+- Minimal test:
+  - reuse existing checkpoints and labels; compute decile-wise MSE/MAE on test
+
+### Likely problem 2: the stage objective is too myopic
+- Why this is plausible:
+  - labels are built from first-step stage objective sensitivity, but the controller optimizes over a 24-step horizon
+  - this may overweight immediate responses that do not improve the full episode KPI
+- Most informative diagnostic:
+  - compare current labels against a short-horizon cumulative objective (e.g. first 4 or 6 steps) on a small subset
+- What would confirm it:
+  - if the label map changes substantially and aligns better with simpler heuristics, the current label target is too narrow
+- Minimal test:
+  - compute alternative labels on 20-50 samples only; no need to retrain first
+
+### Likely problem 3: the weighting strength is too aggressive for this dataset size
+- Why this is plausible:
+  - `alpha=0.5` means the weighted term has a large influence
+  - train set is only 456 windows; sharp weights can easily destabilize fitting
+- Most informative diagnostic:
+  - rerun CSFT with the same labels but `alpha=0.8` and/or stronger clipping
+- What would confirm it:
+  - if softer weighting recovers uniform-level MSE while improving control-critical slices, then the idea is not dead; the current weighting is just too strong
+- Minimal test:
+  - one rerun each for `alpha=0.8` and `clip_quantile=0.8` or a `sqrt(weight)` transform
+
+### Likely problem 4: the current oracle path may not be a valid upper bound
+- Why this matters:
+  - if oracle is worse than learned-uniform, then one of the main diagnostic anchors is unstable
+- Most informative diagnostic:
+  - step-by-step alignment check between environment future and `oracle_data_path`
+- Minimal test:
+  - dump the first 20 steps of oracle-sliced `price/load/solar` and compare against env-derived future values from the same episode
+
+## Suggested Next Experiments
+
+### Highest priority (cheap, diagnostic-first)
+1. **D1: Top-decile error analysis**
+   - Input: existing `uniform` and `CSFT` checkpoints + existing test labels
+   - Output: decile-wise MSE/MAE table and plot
+   - Goal: check whether CSFT helps the cells it claims to care about
+
+2. **D2: Oracle alignment sanity check**
+   - Input: existing oracle pipeline
+   - Output: first-20-step comparison between env future and oracle slices
+   - Goal: verify whether oracle is a trustworthy upper bound
+
+3. **D3: Softened-CSFT rerun**
+   - Variant A: `alpha=0.8`
+   - Variant B: stronger clipping or `sqrt(weight)` transform
+   - Goal: test whether the current failure is caused by over-aggressive weighting rather than a fundamentally wrong direction
+
+### Only after D1-D3
+4. **D4: manual_horizon / event_window baselines**
+   - Reason: if softened CSFT still loses, you need to know whether simple heuristics outperform it
+
+5. **D5: alternative label objective on small subset**
+   - Reason: only worth doing if D1 says the current labels are not helping the sensitive cells at all
+
+## Concise Finding Statement
+
+Current pilot evidence does **not** support the CSFT thesis. In this setting, CSFT underperforms the uniform baseline on both held-out forecasting metrics and final `qp_carbon` control KPIs, while the current oracle result is also suspiciously worse than learned-uniform, indicating that label sharpness and oracle alignment should be diagnosed before scaling the study.

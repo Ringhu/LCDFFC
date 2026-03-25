@@ -1,158 +1,191 @@
-# Research Proposal: LCDFFC Current Broad Idea (Round 0)
+# Research Proposal: Decision-Critical Forecast Refinement for Exogenous Time-Series Control
 
 ## Problem Anchor
 - Bottom-line problem:
-  Build a publishable method for exogenous time-series-driven energy control where future price, carbon, and load variation matter for decision quality.
+  Build a publishable method for exogenous time-series-driven control where better forecasting translates into reliable downstream control gains rather than only lower forecast error.
 - Must-solve bottleneck:
-  Fixed controllers and reward-specific policies do not adapt gracefully when operator preferences or external conditions shift, and pure forecast accuracy does not guarantee better downstream control.
+  In forecast-then-control pipelines, the controller only cares about a small subset of future windows and channels, but standard training treats all forecast errors roughly equally. This mismatch is why stronger forecasters often fail to produce stable KPI gains.
 - Non-goals:
-  Not trying to build a general-purpose building foundation model, a full RL stack, or an LLM that directly outputs low-level continuous actions.
+  Not trying to build a new time-series foundation model, not using LLMs to output low-level actions, not making RL the main method, and not forcing a multi-environment paper in the first version.
 - Constraints:
-  Current codebase is centered on CityLearn 2023 with a working `forecast + QP` loop. Compute appears modest. The first paper must be implementable on top of the current repo rather than requiring a full reset.
+  Start from CityLearn battery control, keep the current low-level QP stack fixed, use modest compute, and keep the main method small enough to implement and validate quickly in the current repository.
 - Success condition:
-  A method that is clearly more paper-worthy than a tuned baseline, shows why time-series prediction matters for control, and provides a clean novelty story that can survive top-venue scrutiny.
+  With the same controller, the proposed training method should produce more consistent cost / carbon / peak improvements than plain MSE training across at least one classic backbone and one strong foundation backbone, and the gain should be traceable to better accuracy on controller-critical future windows.
 
 ## Technical Gap
+Current predict-then-optimize pipelines usually break at the same place. The forecaster is optimized for average error, while the controller reacts to a few decision-critical future events such as price spikes, carbon spikes, outage-sensitive reserve periods, and peak-load windows. A backbone can improve average MSE and still miss the exact windows that move the control objective.
 
-The current repository and planning docs implicitly bundle several ideas:
+Naive fixes are not enough.
+- A larger forecaster can still spend capacity on the wrong horizons.
+- End-to-end RL changes the whole problem and loses the clean forecast-control decomposition.
+- Full differentiable decision-focused training through long-horizon control is heavier and less stable than this repo needs for a first paper.
 
-1. fixed-weight forecast + QP control
-2. uncertainty-aware fallback
-3. decision-focused training
-4. LLM preference routing
-5. optional Grid2Op transfer
-
-That stack is directionally sensible, but it is too wide for one paper. As written, it does not yet isolate one dominant contribution. The codebase today mainly demonstrates:
-
-- a GRU forecaster
-- a QP controller
-- a CityLearn evaluation path
-- prompt/schema scaffolding for a future LLM router
-
-This means the current broad idea risks becoming "forecast + optimizer + uncertainty + DFL + LLM" without a single crisp mechanism claim.
+The missing mechanism is a small way to tell the forecaster which future errors the controller actually cares about.
 
 ## Method Thesis
-
-The current broad thesis can be paraphrased as:
-
-"Use time-series forecasting to improve low-level battery control, then extend the controller with uncertainty handling, decision-focused learning, and language-conditioned preference routing so the same system can adapt to changing high-level objectives."
-
-This is directionally attractive but methodologically unstable as a paper thesis because it contains multiple plausible papers.
+- One-sentence thesis:
+  Fine-tune any forecaster with controller-derived criticality weights so that forecast error is reduced most on the future slots that matter most to the fixed downstream controller.
+- Why this is the smallest adequate intervention:
+  The controller stays fixed. The backbone stays almost unchanged. The only main change is how training weight is assigned across future horizons and channels.
+- Why this route is timely in the foundation-model era:
+  Strong time-series backbones already exist, but they are still trained mostly for generic forecast metrics. A backbone-agnostic control-aware refinement method is a cleaner and more current contribution than building yet another forecasting model.
 
 ## Contribution Focus
 - Dominant contribution:
-  Not yet singular. The proposal currently mixes at least three candidate dominant contributions:
-  - decision-focused forecast-control
-  - uncertainty-aware robust control
-  - language-conditioned dynamic preference routing
+  A controller-critical forecast refinement recipe that estimates which future forecast slots matter to control, then uses those signals to fine-tune the forecaster.
 - Optional supporting contribution:
-  Cross-environment transfer to Grid2Op.
+  Show that the same refinement objective improves both a classic backbone and a strong foundation backbone, which turns the paper from "one tuned model" into a backbone-agnostic method.
 - Explicit non-contributions:
-  General building automation, end-to-end RL, and full LLM control are not intended.
+  No new optimizer, no new low-level controller, no language router in the first paper, no uncertainty stack as a second main contribution.
 
-## Proposed Method (Current Broad Version)
-
+## Proposed Method
 ### Complexity Budget
 - Frozen / reused backbone:
-  CityLearn environment, 9-D forecast feature extraction, GRU forecaster, QP low-level controller.
+  CityLearn environment, current data path, current action space, fixed QP controller, and existing forecaster families.
 - New trainable components:
-  Possibly uncertainty ensemble, possibly decision-focused objective, possibly LLM router.
+  No mandatory new trainable module. The main novelty is the control-aware refinement objective. If needed for stability, add one lightweight event auxiliary head, but this is optional rather than core.
 - Tempting additions intentionally not used:
-  LLM direct action output and large-scale RL are already excluded in docs.
+  End-to-end RL, LLM objective routing, uncertainty ensemble as a co-equal contribution, and a required Grid2Op transfer benchmark.
 
 ### System Overview
-
 ```text
-CityLearn observations
-  -> feature extraction
-  -> GRU forecasting
-  -> QP control
-  -> optional uncertainty gate
-  -> optional LLM preference router
+history + known future exogenous signals
+  -> forecasting backbone
+  -> future net-demand / PV trajectories
+  -> fixed QP controller
   -> battery action
   -> CityLearn rollout
+
+training-only side path:
+  training windows + fixed QP + oracle futures
+    -> controller criticality estimator
+    -> per-horizon / per-channel importance weights
+    -> weighted refinement loss for the forecaster
 ```
 
 ### Core Mechanism
+- Input / output:
+  Input is the same forecast training window used by the current repo: historical building-side time series plus known or provided future exogenous signals. Output is the same forecast target already consumed by the controller.
+- Architecture or policy:
+  The forecasting backbone stays unchanged. The controller stays unchanged. The new mechanism is an offline criticality estimator that scores each future target slot by how much downstream control quality changes when that slot is perturbed.
+- Training signal / loss:
+  For each training example and future slot `(h, c)`, estimate a criticality score
 
-At present, the code does not yet implement a complete mechanism beyond fixed-weight forecast + QP. The current broad idea imagines:
+  `s_(h,c) = |J(pi(y + delta e_(h,c)), y) - J(pi(y), y)| / |delta|`
 
-- forecast the future
-- use optimization for low-level control
-- let language specify dynamic high-level control intent
-- optionally train the predictor in a decision-focused way
+  where `y` is the oracle future target, `pi` is the fixed controller driven by that target, `J` is the rollout or local control objective surrogate, and `e_(h,c)` perturbs one horizon/channel.
+
+  Then fine-tune the forecaster with
+
+  `L = L_base + lambda * sum_(h,c) normalize(s_(h,c)) * ell(yhat_(h,c), y_(h,c))`
+
+  where `L_base` is the normal forecast loss and `ell` is the per-slot prediction loss.
+- Why this is the main novelty:
+  This is not generic reweighting and not full end-to-end DFL. It extracts controller sensitivity into explicit supervision over forecast slots, which is simpler to implement, easier to diagnose, and portable across backbones.
+
+### Optional Supporting Component
+- Only include if truly necessary:
+  A small event auxiliary head that predicts whether each future window is in a high-risk regime such as peak, carbon spike, or reserve-stress period.
+- Input / output:
+  Backbone hidden state to event logits.
+- Training signal / loss:
+  Binary or multi-label cross-entropy on event windows derived from the oracle target and known exogenous drivers.
+- Why it does not create contribution sprawl:
+  It exists only to stabilize the weighting signal if the raw finite-difference score is noisy. The paper still stands if this head is removed.
 
 ### Modern Primitive Usage
+- Which LLM / VLM / Diffusion / RL-era primitive is used:
+  A time-series foundation backbone can be used as one of the backbones tested by the method, but it is frozen or lightly adapted rather than introduced as the main contribution.
+- Exact role in the pipeline:
+  Numeric representation backbone only.
+- Why it is more natural than an old-school alternative:
+  The point is not to invent another backbone. The point is to make an existing strong backbone decision-aware with a minimal training-side intervention.
 
-The intended LLM role is high-level and structured:
+### Integration into Base Generator / Downstream Pipeline
+The method attaches at the training objective, not at inference-time control.
 
-- input: compact scenario summary
-- output: `weights / constraints / mode`
-- not allowed: direct continuous control
+1. Pretrain or reuse the forecasting backbone with the usual forecast loss.
+2. Build controller-criticality labels offline from the fixed QP controller using oracle futures on the training split.
+3. Fine-tune the same forecaster with the weighted loss.
+4. At inference time, run the normal forecast -> QP pipeline with no additional planner, router, or policy network.
 
-This is a healthier placement than LLM direct action, but it remains only partially specified and unimplemented.
+This keeps inference simple and makes the method easy to retrofit into the current repository.
 
 ### Training Plan
-
-The current broad plan implies multiple stages:
-
-1. train GRU with MSE
-2. possibly add decision-focused loss
-3. possibly add uncertainty estimation
-4. possibly add LLM routing
+1. Use CityLearn training windows with building-side targets such as future net demand and optional PV.
+2. Train or reuse a baseline forecaster with the current standard objective.
+3. For each sampled training window, compute controller-criticality labels by perturbing target slots and measuring downstream objective change under the fixed QP controller.
+4. Smooth and clip the raw scores so training does not collapse to a few nearest horizons.
+5. Fine-tune the forecaster with the weighted objective.
+6. Optionally repeat the same recipe on one classic backbone and one foundation backbone.
+7. Keep the controller fixed throughout the main experiments.
 
 ### Failure Modes and Diagnostics
-- Contribution drift:
-  The paper story becomes "many ingredients added together" instead of one mechanism.
-- Novelty dilution:
-  The fixed-weight `forecast + QP` system alone is not novel enough for a top venue.
-- Validation ambiguity:
-  If performance improves, it may be unclear whether the gain comes from forecasting, optimization tuning, uncertainty handling, or language routing.
+- Criticality collapses to only the nearest few steps:
+  Detect by plotting weight mass over horizons.
+  Fallback is temperature scaling, percentile clipping, and comparison to a naive horizon-decay baseline.
+- Sensitivity labels are too noisy:
+  Detect by low rank-correlation across nearby windows or seeds.
+  Fallback is local smoothing, event-window aggregation, or the optional auxiliary head.
+- Gains only appear on one backbone:
+  Detect by running the same recipe on one classic and one foundation backbone.
+  Fallback is to narrow the claim from backbone-agnostic to backbone-compatible.
+- Gains improve MSE but not control:
+  Detect by KPI delta versus the MSE baseline.
+  Fallback is to inspect whether the criticality score is aligned with the actual controller bottlenecks and revise the score definition.
 
 ### Novelty and Elegance Argument
+The paper is focused because it makes one claim.
 
-In its current broad form, the idea is promising but not elegant enough. It is better viewed as a research program than as a single paper.
+Forecast quality should be measured and trained according to controller sensitivity, not uniform average error.
+
+That is sharper than bundling forecasting, uncertainty, routing, and RL into one stack. It also fits current time-series practice better: strong pretrained or standard backbones already exist, but they still need a clean way to become decision-aware.
 
 ## Claim-Driven Validation Sketch
-
-### Claim 1
-Language-conditioned high-level adaptation improves multi-objective sequential control without retraining the low-level controller.
-
+### Claim 1: Controller-critical refinement improves downstream control more reliably than plain forecast training
 - Minimal experiment:
-  Compare fixed weights vs language-routed weights under preference shifts.
+  Train the same backbone with MSE only versus the proposed refinement objective, then evaluate both with the same fixed QP controller on CityLearn.
 - Baselines / ablations:
-  fixed weights, heuristic rule router, structured numeric preference router.
+  myopic or no-forecast controller, MSE training, naive horizon-decay weighting, event-only weighting.
 - Metric:
-  KPI regret under changing preference regimes.
+  cost, carbon, peak, ramping, and KPI regret relative to an oracle-forecast controller.
 - Expected evidence:
-  Better adaptation to preference shifts.
+  The proposed refinement gives a more consistent KPI gain than MSE-only training and naive weighting.
 
-### Claim 2
-Decision-focused or uncertainty-aware training improves robustness of forecast-control.
-
+### Claim 2: The gain comes from protecting controller-critical windows rather than blanket accuracy improvement
 - Minimal experiment:
-  Compare MSE-only vs decision-focused or uncertainty-gated variants.
+  Partition future slots into high-criticality and low-criticality bins, then compare forecast error and perturbation robustness for each bin.
 - Baselines / ablations:
-  MSE forecast + QP, uncertainty gate off, DFL off.
+  MSE model versus proposed model.
 - Metric:
-  cost/carbon/peak under OOD or preference-shift settings.
+  weighted error on critical slots, action deviation under perturbation, and local objective degradation around price/carbon/peak events.
 - Expected evidence:
-  More stable downstream control.
+  The proposed model reduces error mostly where the controller is sensitive, and this change explains the KPI improvement.
+
+### Claim 3: The method is backbone-compatible rather than tied to one model family
+- Minimal experiment:
+  Apply the same refinement recipe to one classic backbone and one strong foundation backbone.
+- Baselines / ablations:
+  MSE version of each backbone.
+- Metric:
+  downstream KPI delta over each backbone's own MSE baseline across ID and outage-seed-shifted evaluation.
+- Expected evidence:
+  The refinement direction is consistent across backbones even if absolute gains differ.
 
 ## Experiment Handoff Inputs
 - Must-prove claims:
-  adaptation without retraining, genuine downstream value of the added module, and top-venue-worthy novelty.
+  controller-aware forecast training matters, the effect is caused by critical-window protection, and the method is not tied to one backbone.
 - Must-run ablations:
-  no LLM, heuristic router, numeric router, fixed weights, possibly no uncertainty or no DFL.
+  MSE only, naive horizon weighting, event-only weighting, proposed criticality weighting, and at least one backbone swap.
 - Critical datasets / metrics:
-  CityLearn 2023 with cost/carbon/peak, preference-shift episodes, OOD variants.
+  CityLearn 2023 with cost / carbon / peak / ramping and outage-seed shift evaluation.
 - Highest-risk assumptions:
-  That the LLM routing layer is necessary and not replaceable by a much simpler structured module.
+  the fixed-controller sensitivity signal must be stable enough to supervise forecasting, and the resulting gains must survive when moving from a classic model to a stronger backbone.
 
 ## Compute & Timeline Estimate
 - Estimated GPU-hours:
-  modest for GRU, modest-to-moderate for ablations, unknown for any local LLM fine-tuning.
+  Low for GRU-scale runs, moderate for one foundation-backbone replication. Sensitivity label generation is mostly offline controller evaluation rather than large-model training.
 - Data / annotation cost:
-  potentially low if language preferences are templated synthetically.
+  No manual labeling cost. Criticality labels come from the simulator and fixed controller.
 - Timeline:
-  feasible for a staged prototype, but too broad for one clean first paper.
+  Stage 1: stabilize the reference backbone and controller. Stage 2: build criticality labels and weighted refinement. Stage 3: run backbone and shift validation.

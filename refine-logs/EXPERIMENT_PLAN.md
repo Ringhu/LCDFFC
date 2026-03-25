@@ -1,236 +1,226 @@
 # Experiment Plan
 
-**Problem**: 在外生时间序列驱动控制里，更好的 forecasting 不该只降低平均误差，还要稳定转化成更好的下游控制 KPI。
-**Method Thesis**: Uniform forecast loss 学错了目标；用 frozen controller 的局部敏感度重加权 forecast training，能让模型优先修正 controller-critical future errors。
-**Date**: 2026-03-25
+**Problem**: 在固定 `forecast -> qp_carbon -> CityLearn` 闭环里，怎样让 forecast training 真正服务下游控制 KPI，而不只是降低平均 forecast error。
+**Method Thesis**: Raw finite-difference controller sensitivities should only be used for forecast training after passing a numerical preflight validity gate and a fixed stabilization operator.
+**Date**: 2026-03-26
 
 ## Claim Map
 
 | Claim | Why It Matters | Minimum Convincing Evidence | Linked Blocks |
 |-------|-----------------|-----------------------------|---------------|
-| C1: CSFT 比 uniform forecast training 更稳定地改善固定 `qp_carbon` 的下游 `cost / carbon / peak` | 这是主论文的机制主张 | 在 standard test 和 stress subsets 上，CSFT 持续优于 uniform loss，并且不输给 heuristic weighting | B1, B3 |
-| C2: 增益来自 controller-critical future cells 上的误差下降，而不是 generic reweighting 或训练波动 | 不做这个，reviewer 会说只是巧合或手工 weighting | 高敏感度 decile 的 forecast error 明显下降；matched-controller labels 明显优于 mismatched labels | B2, B3 |
-| Anti-claim A1: 增益只来自简单 heuristic weighting | 这是最直接的反驳点 | `event-window` / `manual horizon weighting` 都输给 CSFT | B3 |
-| Anti-claim A2: 增益只来自换 controller 或换 backbone | 当前仓库已有大量这类历史结果，主论文要避免被带偏 | 主论文固定 `qp_carbon` 和单一 backbone，只改训练目标 | B1 |
+| C1: raw controller-sensitive labels are only usable if they pass a numerical preflight gate | 如果这个 gate 不成立，后面所有 stabilized-CSFT 都没有意义 | oracle alignment 通过；raw-CSFT 在 top-decile MAE 上不比 uniform 差超过 5% | B1 |
+| C2: fixed stabilization operator can recover controller-critical fitting and early KPI signal without unacceptable aggregate degradation | 这是当前 paper 的主方法主张 | stabilized-CSFT 满足 acceptance rule：top-decile MAE 更低、overall MAE 不劣化超过 1%、`cost` 或 `carbon` 至少一个改善、`peak` 不劣化超过 1% | B2, B3 |
+| Anti-claim A1: gain only comes from arbitrary weight tuning or post-hoc metric cherry-picking | reviewer 最容易质疑这只是 recipe tuning | operator 全固定；只跑一个 rerun；用预注册 acceptance rule 判定 | B1, B2 |
+| Anti-claim A2: even softened weighting is no better than simpler control-aware heuristics | 如果 heuristic 就够了，方法贡献要降级 | stabilized-CSFT 至少不弱于 strongest simple heuristic baseline，或明确把 heuristic comparison 留到 gate 通过后再做 | B3 |
 
 ## Paper Storyline
 - Main paper must prove:
-  - fixed `forecast -> qp_carbon -> CityLearn` 下，uniform loss 不适合这个 control objective
-  - CSFT 能在不改 controller 的前提下，稳定改善下游 KPI
-  - 这种改善来自 controller-sensitive cells 上的误差再分配
+  - 当前 raw-CSFT 不是一个可直接扩展的方法，必须先经过 numerical preflight
+  - 通过 preflight 后，固定 stabilization operator 能把 raw sensitivities 变成可训练监督
+  - 这个监督至少能先在 controller-critical cells 上恢复正向信号，并带来早期 control KPI 改善
 - Appendix can support:
-  - sensitivity heatmap 细节
-  - label generation compute 开销统计
-  - 一个可选 backbone replication
-  - routing motivation 一页图
+  - operator 的 mechanistic justification
+  - label storage / horizon indexing / channel ordering 细节
+  - `ramping`、distribution stats、更多可视化
+  - controller-specificity 或 heuristic expansion（仅当主线通过 gate 后）
 - Experiments intentionally cut:
-  - language-conditioned routing 主表
-  - fallback robustness 主表
-  - Grid2Op transfer
-  - full differentiable decision-focused baseline
-  - backbone zoo
+  - 多 backbone 扩展
+  - 多 seed 扩展（在 single-run gate 没过前不做）
+  - RL / routing / foundation-model 对照
+  - bucketed fallback 主方法
+  - 大规模 heuristic matrix
 
 ## Experiment Blocks
 
-### Block 1: Main Anchor Result — CSFT 是否改善固定 forecast-then-control
+### Block 1: Numerical Preflight Gate
 - **Claim tested**: C1
-- **Why this block exists**: 这是整篇论文的主表。没有这块，整篇论文没有立足点。
+- **Why this block exists**: 这是整条路线的 stop/go gate。没有它，stabilized-CSFT 只是继续在可疑 supervision 上加工程修补。
 - **Dataset / split / task**:
-  - 数据：当前 `CityLearn 2023` 主数据路径，对应 `artifacts/forecast_data.npz`
-  - 划分：chronological split，train 70% / val 10% / test 20%
-  - 任务：固定 `qp_carbon` controller，下游闭环评估
+  - 数据：当前 `artifacts/forecast_data.npz` 对应的 chronological split
+  - split：existing test split + matched oracle slices
+  - task：验证 oracle 路径与 raw label utility
 - **Compared systems**:
-  1. uniform-loss GRU forecaster
-  2. CSFT-GRU
-  3. oracle forecast + `qp_carbon` 上界
-  4. optional naive / persistence forecast + `qp_carbon`，仅当实现代价很低
+  1. oracle slices vs environment-derived future truth
+  2. existing uniform checkpoint (`R103/R112` line)
+  3. existing raw-CSFT checkpoint (`R105/R113` line)
 - **Metrics**:
-  - 主指标：total cost、total carbon、peak load
-  - 辅指标：ramping、oracle gap closure
-  - forecast side：overall MAE / RMSE
+  - decisive: oracle `max_abs_error` on first 20 matched steps for `price/load/solar`
+  - decisive: top-decile MAE ratio = `MAE_raw_csft / MAE_uniform`
+  - secondary: full decile-wise MAE table
 - **Setup details**:
-  - 主 backbone：`GRU`
-  - 主 controller：`qp_carbon`
-  - 预测通道：当前 repo 中 controller 消费的 forecast columns，中心是 `[price, load, solar]`
-  - `carbon_intensity` 在主实验里保持现有控制路径，不把“学习 carbon forecast”引入第一篇主线
-  - seeds：3
-  - 训练 / 推理用 `GPU 2`
+  - no retraining
+  - use current test labels `artifacts/csft_labels_qp_carbon_test.npz`
+  - top decile defined by test-label sensitivity ranking over all `(sample, horizon, channel)` cells
+  - PASS iff:
+    - `max_abs_error <= 1e-6` for each channel
+    - raw-CSFT top-decile MAE is not worse than uniform by more than 5%
 - **Success criterion**:
-  - CSFT 相对 uniform loss 在 3 个 seeds 上对 `cost / carbon` 给出一致改善
-  - `peak` 不出现明显退化
-  - 相对 oracle gap 有非平凡缩小
+  - preflight PASS
 - **Failure interpretation**:
-  - 如果只提升 forecast 不提升 control，主 thesis 不成立
-  - 如果只在单个 seed 或单个指标上变好，论文说法要明显减弱
+  - oracle FAIL => first fix oracle/eval path, do not run stabilized-CSFT
+  - utility FAIL => raw slot-wise CSFT is not a viable route in current form; do not scale this paper line
 - **Table / figure target**:
-  - Main Table 1：uniform vs CSFT vs oracle
-  - Figure 1：oracle gap closure bar chart
+  - Main Table 1 (left panel) or Figure 1: preflight PASS/FAIL summary
+  - Appendix Table A1: decile-wise MAE table
 - **Priority**: MUST-RUN
 
-### Block 2: Mechanism Validation — 改善是不是集中在高敏感度 future cells
+### Block 2: Main Anchor Result — One Stabilized-CSFT Rerun
 - **Claim tested**: C2
-- **Why this block exists**: 这是机制图。没有这块，CSFT 会被看成普通 reweighting trick。
+- **Why this block exists**: 这是主方法的第一性证据。只要这一步不能给出正信号，就不值得继续做更大规模实验。
 - **Dataset / split / task**:
-  - 使用与 Block 1 相同的 test split
-  - 每个 forecast cell 用离线 sensitivity labels 分成 deciles
+  - 数据：当前 CityLearn 2023 主数据路径
+  - split：same chronological train/val/test as current GRU runs
+  - task：固定 `qp_carbon` 下的 stabilized-CSFT 单次 rerun
 - **Compared systems**:
-  1. uniform-loss GRU
-  2. CSFT-GRU
+  1. uniform GRU baseline
+  2. raw-CSFT GRU pilot
+  3. stabilized-CSFT GRU (new)
 - **Metrics**:
-  - overall RMSE / MAE
-  - top-sensitivity-decile RMSE / MAE
-  - decile-wise error reduction
-  - action deviation / stage-loss deviation on top-decile perturbation slices（如果额外代价低）
+  - decisive: top-decile MAE
+  - decisive: overall MAE
+  - decisive: `cost`, `carbon`, `peak`
+  - secondary: `ramping`
 - **Setup details**:
-  - sensitivity label：对每个 `(h, c)` 做 finite-difference perturbation
-  - label 使用一步 stage objective sensitivity，不用 full rollout regret
-  - label 处理：95 分位 clipping + per-sample normalization
+  - backbone: existing GRU
+  - controller: fixed `qp_carbon`
+  - GPU: GPU 2 only
+  - stabilization operator fixed to:
+    - `q95_train` clipping over positive raw train sensitivities
+    - `m_train` = median over positive clipped raw train sensitivities
+    - `eps = 1e-8`
+    - `u = log1p(s_clip / (m_train + eps))`
+    - per-sample normalization
+  - loss:
+    - Huber delta = `1.0`
+    - `alpha = 0.85`
+  - seeds: 1 (this stage intentionally single-run)
 - **Success criterion**:
-  - overall forecast error 变化不大
-  - 高敏感度 decile 上的误差下降明显，大于低敏感度 decile
+  - all four acceptance-rule conditions hold:
+    1. top-decile MAE < uniform
+    2. overall MAE no worse than uniform by >1%
+    3. at least one of `cost` or `carbon` improves
+    4. `peak` no worse than uniform by >1%
 - **Failure interpretation**:
-  - 如果所有 decile 都差不多，说明 CSFT 没有把容量重新分配到 controller-critical cells
+  - if acceptance rule fails, do not scale to 3 seeds or more baselines; this route remains REVISE or should be stopped
 - **Table / figure target**:
-  - Figure 2：forecast error reduction vs sensitivity decile
-  - Figure 3：average horizon × channel sensitivity heatmap
+  - Main Table 1 (right panel): uniform vs raw-CSFT vs stabilized-CSFT
 - **Priority**: MUST-RUN
 
-### Block 3: Novelty Isolation — finite-difference sensitivity 是否比 heuristic weighting 更对题
-- **Claim tested**: C1 + C2 + Anti-claim A1
-- **Why this block exists**: reviewer 一定会问“你这个是不是就是手工强调关键窗口”。
+### Block 3: Novelty / Simplicity Check — Strongest Simple Heuristic vs Stabilized-CSFT
+- **Claim tested**: C2 + Anti-claim A2
+- **Why this block exists**: 如果 stabilized-CSFT 过 gate，reviewer 下一句就是“是不是简单 heuristic weighting 就够了？”
 - **Dataset / split / task**:
-  - 与 Block 1 相同
-  - 同样在 `qp_carbon` 下闭环评估
+  - 与 Block 2 相同
+  - 仅在 Block 2 成功后运行
 - **Compared systems**:
-  1. uniform loss
-  2. manual horizon weighting
-  3. event-window weighting
-  4. CSFT
+  1. uniform
+  2. strongest simple heuristic baseline（优先 `event-window weighting`；若已有实现更成熟则用 `manual horizon weighting`）
+  3. stabilized-CSFT
 - **Metrics**:
-  - total cost、total carbon、peak load
-  - top-decile forecast MAE / RMSE
+  - decisive: top-decile MAE, overall MAE
+  - decisive: `cost`, `carbon`, `peak`
 - **Setup details**:
-  - manual horizon weighting：强调近端控制窗口
-  - event-window weighting：按 price spike / carbon spike / peak-load windows 做 coarse weighting
-  - 其余训练 budget 完全相同
+  - heuristic baseline 只保留一个最强简单家族，避免 baseline list 过长
+  - same backbone, same budget, same controller
+  - seeds: 1 initially; 3 only if stabilized-CSFT already clearly positive
 - **Success criterion**:
-  - CSFT 明显优于两个 heuristic weighting baselines
+  - stabilized-CSFT 至少不弱于 strongest simple heuristic on primary KPIs and top-decile MAE
 - **Failure interpretation**:
-  - 如果 event-only 或 horizon-only 跟 CSFT 打平，主张要降成“controller-aware weighting 有帮助”，不能再强调 finite-difference superiority
+  - if heuristic ties or wins, paper claim must weaken to “simple control-aware weighting may suffice”
 - **Table / figure target**:
-  - Main Table 2：uniform / heuristic / event / CSFT 对比
+  - Main Table 2 or appendix if effect is weak
+- **Priority**: MUST-RUN only if Block 2 passes, otherwise CUT
+
+### Block 4: Failure Analysis / Mechanism Figure
+- **Claim tested**: supports C1/C2
+- **Why this block exists**: 即使结果是负的，也需要一张机制图把结论讲清楚。
+- **Dataset / split / task**:
+  - test split
+  - preflight outputs + all available model predictions
+- **Compared systems**:
+  1. uniform
+  2. raw-CSFT
+  3. stabilized-CSFT (if available)
+- **Metrics**:
+  - full decile-wise MAE curve
+  - sensitivity distribution before/after operator
+  - acceptance-rule dashboard
+- **Setup details**:
+  - no extra training
+  - can be generated after Block 1 and Block 2
+- **Success criterion**:
+  - mechanism figure clearly shows whether stabilization changed the supervision distribution and whether gains concentrated on critical cells
+- **Failure interpretation**:
+  - if the figure remains flat or inconsistent, the story is not yet mechanism-level
+- **Table / figure target**:
+  - Figure 2: decile-wise MAE curve
+  - Figure 3: raw vs stabilized sensitivity distribution / operator effect
 - **Priority**: MUST-RUN
 
-### Block 4: Controller-Specificity Check — label 是否真的是 controller-specific
-- **Claim tested**: C2
-- **Why this block exists**: 这是最强的机制 defense。它能说明 label 不是 generic importance map。
+### Block 5: Controller-Specificity Check (Conditional)
+- **Claim tested**: optional strengthening of C2
+- **Why this block exists**: 只有主线已经有正信号时，才值得证明 signal 真是 controller-specific，而不是 generic importance map。
 - **Dataset / split / task**:
-  - 与 Block 1 相同
+  - same as Block 2
+  - only if Block 2 passes convincingly
 - **Compared systems**:
-  1. CSFT with `qp_carbon` labels, eval with `qp_carbon`
-  2. CSFT with `qp_current` labels, eval with `qp_carbon`
-  3. optional reverse direction only if主结果已经很强
+  1. stabilized-CSFT with `qp_carbon` labels
+  2. stabilized-CSFT with mismatched labels (e.g. `qp_current`)
 - **Metrics**:
-  - total cost、total carbon、peak load
-  - oracle gap closure
-  - top-decile forecast error
+  - top-decile MAE
+  - `cost`, `carbon`, `peak`
 - **Setup details**:
-  - 唯一变化是 label generator 用哪个 controller
-  - backbone、loss、training budget 全保持一致
+  - same operator, same backbone, same budget; only label source changes
+  - seeds: 1 initially
 - **Success criterion**:
-  - matched-controller labels 明显优于 mismatched labels
+  - matched labels outperform mismatched labels on primary KPI story
 - **Failure interpretation**:
-  - 如果二者差不多，论文要改成 generic control-aware weighting，而不是 controller-sensitive weighting
+  - if no gap appears, claim should weaken from controller-sensitive to generic control-aware weighting
 - **Table / figure target**:
-  - Main Table 3 或主文末表
-- **Priority**: MUST-RUN
-
-### Block 5: Simplicity / Stability Check — mixed loss 和 label 稳定性够不够
-- **Claim tested**: 方法没有靠过度设计才跑起来
-- **Why this block exists**: reviewer 会担心 CSFT 过拟合 spikes，或者只是纯 weighted loss 的偶然收益。
-- **Dataset / split / task**:
-  - val split + full test split
-- **Compared systems**:
-  1. pure weighted loss (`alpha=0`)
-  2. mixed loss (`alpha=0.5`)
-  3. optional `alpha=0.75`
-- **Metrics**:
-  - val loss stability
-  - main KPIs
-  - label distribution stats
-- **Setup details**:
-  - 对 sensitivity label 统计分布、top-k mass、跨相邻窗口 rank correlation
-- **Success criterion**:
-  - mixed loss 更稳，且不牺牲主表结果
-- **Failure interpretation**:
-  - 如果 pure weighted loss 更好且更稳，方法实现要简化
-  - 如果 label 分布极端尖锐，先修 label pipeline 再谈 full run
-- **Table / figure target**:
-  - Appendix Table A1
-  - Appendix Figure A1
-- **Priority**: MUST-RUN
-
-### Block 6: Optional Extension — 单个附加 backbone replication
-- **Claim tested**: 方向不是只对一个 trainable backbone 成立
-- **Why this block exists**: 这不是主论文必须项，但如果主结果够强，可以提升说服力。
-- **Dataset / split / task**:
-  - 与主设置相同
-- **Compared systems**:
-  - second stable backbone uniform vs CSFT
-- **Metrics**:
-  - 与 Block 1 相同
-- **Setup details**:
-  - 只选一个额外 backbone，不做 zoo
-  - 只有在主 backbone 已经出现正结果后才运行
-- **Success criterion**:
-  - 改善方向一致，哪怕绝对幅度不同
-- **Failure interpretation**:
-  - 结论收窄为“compatible with GRU-class setup”
-- **Table / figure target**:
-  - Appendix Table A2
+  - Appendix first, promote to main only if very clean
 - **Priority**: NICE-TO-HAVE
 
 ## Run Order and Milestones
 
 | Milestone | Goal | Runs | Decision Gate | Cost | Risk |
 |-----------|------|------|---------------|------|------|
-| M0 | 跑通 sensitivity label pipeline | label sanity + distribution stats + one toy batch overfit | 如果 label 极端尖锐或几乎全平，就先修 label 再训练 | 低 GPU / 中 CPU | finite-difference 太噪 |
-| M1 | 复现 uniform baseline 和 oracle upper bound | GRU uniform + oracle eval | 如果 uniform / oracle gap 本身不稳定，先修数据切分和评估脚本 | 低到中 | metric 或 split 定义不稳 |
-| M2 | 先看 CSFT 有没有信号 | 1-seed CSFT vs uniform on val/test | 如果 `cost / carbon` 没有正信号，先停，不展开 3 seeds | 中 | 主 thesis 太弱 |
-| M3 | 做主表和关键 ablations | 3-seed CSFT + heuristic baselines + matched/mismatched | 如果 CSFT 不能稳定赢 heuristic，就把 claim 改弱 | 中到高 | finite-difference superiority 站不住 |
-| M4 | 做机制图和 appendix 稳定性 | decile plots + mixed/pure + label stats | 如果机制图讲不清，主文说法要明显减弱 | 低到中 | 结果像普通 trick |
-| M5 | 可选 replication | second backbone uniform vs CSFT | 只有主结果已正才做 | 中 | 花算力但收益小 |
+| M0 | Verify numerical preflight gate | R201 oracle alignment, R202 raw-label utility | If either fails, stop this route and do not launch stabilized rerun | Very low | Oracle path or label ranking may already kill the method |
+| M1 | Run main stabilized rerun | R203 stabilized-CSFT train+eval | Continue only if acceptance rule passes | Low | Method may still be too weak even after stabilization |
+| M2 | Defend against strongest simple alternative | R204 strongest heuristic baseline (conditional) | Only run if R203 passes | Low to medium | Heuristic may explain away the gain |
+| M3 | Produce mechanism figures and paper tables | R205 plots/tables package | Required for paper interpretation regardless of positive/negative outcome | Low | Story may remain unclear if effects are noisy |
+| M4 | Optional strengthening | R206 controller-specificity check | Only if R203 is clearly positive | Medium | Extra compute without affecting main conclusion |
 
 ## Compute and Data Budget
 - **Total estimated GPU-hours**:
-  - M0-M1: 低
-  - M2: 低到中
-  - M3: 中
-  - 全部 must-run 合计：中等预算，重点不是 GPU，而是 offline QP label generation
+  - M0: negligible GPU, mostly analysis
+  - M1: low (one GRU rerun)
+  - M2: low to medium, conditional
+  - M3: negligible GPU
+  - Total must-run before scale-up: low budget
 - **Data preparation needs**:
-  - 复用当前 `artifacts/forecast_data.npz`
-  - 生成 chronological split 索引
-  - 生成 stress subset masks（price/carbon/load 90th percentile）
+  - reuse current chronological split
+  - reuse existing checkpoint and label artifacts
+  - ensure oracle slice extraction and env-future extraction are deterministic and matched by episode/time index
 - **Human evaluation needs**:
-  - 无
+  - none
 - **Biggest bottleneck**:
-  - sensitivity label generation 的稳定性与计算开销
+  - not compute; the main bottleneck is whether preflight passes and whether stabilized weighting yields any real signal
 
 ## Risks and Mitigations
-- **Risk**: finite-difference sensitivity 太噪
-  - **Mitigation**: channel-scaled `delta`，95 分位 clipping，per-sample normalization，先做 pilot 再全量
-- **Risk**: CSFT 只提升 forecast，不提升 control
-  - **Mitigation**: 把 stop/go gate 放在 M2；先看 `cost / carbon` 是否动，再决定要不要铺开
-- **Risk**: CSFT 只是 heuristic weighting 的换皮
-  - **Mitigation**: 强制保留 `manual horizon` 和 `event-window` 两个 baselines
-- **Risk**: 主结果只在某个 seed 或某个 stress subset 有效
-  - **Mitigation**: 必做 3 seeds；主表必须同时给 standard test 和 stress subsets
-- **Risk**: routing 历史结果继续干扰主线
-  - **Mitigation**: 当前主计划完全不把 routing 放进 main blocks
+- **Risk**: oracle alignment bug invalidates both oracle comparison and label interpretation
+  - **Mitigation**: make oracle alignment the very first run and block all later runs on it
+- **Risk**: raw label utility test fails immediately
+  - **Mitigation**: treat that as a useful falsification result and pivot early instead of scaling CSFT
+- **Risk**: stabilized operator improves critical cells but not control KPIs
+  - **Mitigation**: use the pre-registered acceptance rule; if it fails, stop and do not expand seeds/backbones
+- **Risk**: reviewer says the gain is just heuristic weighting
+  - **Mitigation**: run only the strongest simple heuristic baseline after the main rerun passes
+- **Risk**: pseudo-novelty criticism remains
+  - **Mitigation**: in paper text, explicitly justify why clipping + `log1p` + per-sample normalization is a scale-control mechanism rather than arbitrary recipe tuning
 
 ## Final Checklist
 - [ ] Main paper tables are covered
 - [ ] Novelty is isolated
 - [ ] Simplicity is defended
-- [ ] Frontier contribution is explicitly not claimed in the main paper
+- [ ] Frontier contribution is explicitly not claimed
 - [ ] Nice-to-have runs are separated from must-run runs

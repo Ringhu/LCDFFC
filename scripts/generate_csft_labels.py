@@ -12,10 +12,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
 import yaml
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from controllers.qp_controller import QPController
 from data.dataset import CityLearnDataset
@@ -54,10 +57,13 @@ def build_controller_from_schema(schema: str, controller_config: dict) -> QPCont
 def infer_soc_index(data_path: str) -> int:
     loaded = np.load(data_path, allow_pickle=True)
     columns = loaded["columns"].tolist()
-    try:
-        return int(columns.index("electrical_storage_soc"))
-    except ValueError as exc:
-        raise ValueError("Could not find electrical_storage_soc column in forecast_data.npz") from exc
+    candidates = ["electrical_storage_soc", "electrical_storage_soc_avg"]
+    for name in candidates:
+        if name in columns:
+            return int(columns.index(name))
+    raise ValueError(
+        f"Could not find SOC column in forecast_data.npz. Tried: {candidates}. Available columns: {columns}"
+    )
 
 
 def build_stage_weights(controller_type: str) -> tuple[dict[str, float], bool]:

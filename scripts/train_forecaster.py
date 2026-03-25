@@ -98,8 +98,8 @@ def _build_split_weights(
     event_boost: float,
 ) -> np.ndarray | None:
     mode = loss_mode.lower()
-    horizon = train_ds.horizon
-    num_targets = train_ds.num_targets
+    horizon = dataset.horizon
+    num_targets = dataset.num_targets
 
     if mode == "uniform":
         return None
@@ -122,7 +122,7 @@ def _build_split_weights(
             front_steps=front_steps,
             front_weight=front_weight,
         )
-        return np.repeat(base[None, ...], len(train_ds), axis=0).astype(np.float32)
+        return np.repeat(base[None, ...], len(dataset), axis=0).astype(np.float32)
 
     if mode == "event_window":
         train_targets = _load_split_raw_targets(data_path, split="train", target_cols=target_cols)
@@ -131,10 +131,11 @@ def _build_split_weights(
         net_load = load - solar
         price_threshold = float(np.quantile(train_targets[:, 0], 0.9))
         net_load_threshold = float(np.quantile(net_load, 0.9))
-        weights = np.zeros((len(train_ds), horizon, num_targets), dtype=np.float32)
-        for idx in range(len(train_ds)):
-            _, target, _ = train_ds[idx]
-            future_raw = target.numpy() * train_ds.std[target_cols] + train_ds.mean[target_cols]
+        weights = np.zeros((len(dataset), horizon, num_targets), dtype=np.float32)
+        for idx in range(len(dataset)):
+            sample = dataset[idx]
+            target = sample[1]
+            future_raw = target.numpy() * dataset.std[target_cols] + dataset.mean[target_cols]
             weights[idx] = build_event_window_weights(
                 future_raw,
                 price_threshold=price_threshold,

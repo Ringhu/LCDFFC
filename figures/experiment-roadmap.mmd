@@ -1,0 +1,65 @@
+flowchart LR
+    classDef done fill:#D1FAE5,stroke:#059669,stroke-width:2px,color:#064E3B;
+    classDef current fill:#DBEAFE,stroke:#2563EB,stroke-width:2px,color:#1E3A8A;
+    classDef next fill:#FEF3C7,stroke:#D97706,stroke-width:2px,color:#92400E;
+    classDef defer fill:#F3F4F6,stroke:#6B7280,stroke-width:2px,color:#374151;
+    classDef note fill:#F5F3FF,stroke:#7C3AED,stroke-width:2px,color:#4C1D95;
+
+    start([实验主线]) --> doneBlock
+    doneBlock --> currentBlock
+    currentBlock --> nextBlock
+    nextBlock --> deferBlock
+
+    subgraph doneBlock[已完成基础实验面]
+        direction TB
+        m0["M0 / M0+<br/>R001-R002, R018<br/>regime 协议与 event-driven 协议"]
+        m1["M1 / M1+ / M1++ / M1+++<br/>R003-R004, R016-R017, R020-R021, R023-R026<br/>forecast + control + foundation + controller diagnosis"]
+        m2["M2 / M2+ / M2++ / M2+++<br/>R005-R006, R011-R015, R019, R022<br/>heuristic / text router / prompt-only router / transfer"]
+        m3["M3<br/>R007-R008<br/>router ablation 与 fixed-weight coverage"]
+        m4["M4 / M4+<br/>R009, R013<br/>fallback 与 targeted ablation"]
+    end
+
+    subgraph currentBlock[当前重点]
+        direction TB
+        c1["固定 low-level reference stack<br/>1 个主 controller + 1 个经典 backbone + 1 个 foundation backbone"]
+        c2["验证 preference-to-KPI controllability<br/>看 carbon / peak / balanced trade-off 是否稳定"]
+        c3["整理统一 artifact<br/>统一 schema / 指标 / 输出目录"]
+    end
+
+    subgraph nextBlock[下一步]
+        direction TB
+        n1["cross-backbone routing stability<br/>在 2-3 个 frozen low-level stack 上重复 event-driven routing"]
+        n2["把 router 的 bad JSON / fallback / 调用频率影响写成可验证结果"]
+        n3["更新 R026 说法<br/>改成 cost / carbon 在两条 backbone 上都改善<br/>但不是全 KPI 一致占优"]
+    end
+
+    subgraph deferBlock[暂缓项]
+        direction TB
+        d1["M5 / R010<br/>OOD weather / price 扩展"]
+        d2["SPO+ feasibility check"]
+        d3["RL / OOD / production router 扩展"]
+        d4["继续堆更多 router 版本或弱 baseline controller"]
+    end
+
+    note1["当前判断：<br/>高层 routing 结论仍受 low-level stack 影响。<br/>先把参考底座确定下来，再继续高层比较。"]
+
+    start:::note
+    m0:::done
+    m1:::done
+    m2:::done
+    m3:::done
+    m4:::done
+    c1:::current
+    c2:::current
+    c3:::current
+    n1:::next
+    n2:::next
+    n3:::next
+    d1:::defer
+    d2:::defer
+    d3:::defer
+    d4:::defer
+    note1:::note
+
+    m1 -.支撑结论.-> note1
+    c2 -.决定是否继续.-> n1

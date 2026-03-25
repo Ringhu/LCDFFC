@@ -1,0 +1,47 @@
+# 当前实验进度图
+
+当前实验的旧里程碑大多已经完成。现在真正要推进的不是再补更多历史轮次，而是把现有结果整理成统一的参考底座，再继续高层比较。
+
+```mermaid
+flowchart LR
+    classDef done fill:#D1FAE5,stroke:#059669,stroke-width:2px,color:#064E3B;
+    classDef current fill:#DBEAFE,stroke:#2563EB,stroke-width:2px,color:#1E3A8A;
+    classDef next fill:#FEF3C7,stroke:#D97706,stroke-width:2px,color:#92400E;
+    classDef defer fill:#F3F4F6,stroke:#6B7280,stroke-width:2px,color:#374151;
+    classDef note fill:#F5F3FF,stroke:#7C3AED,stroke-width:2px,color:#4C1D95;
+
+    subgraph milestone[里程碑完成度]
+        direction LR
+        m0["M0 / M0+<br/>3/3 完成<br/>R001-R002, R018"]
+        m1["M1 系列<br/>10/10 完成<br/>R003-R004, R016-R017, R020-R021, R023-R026"]
+        m2["M2 系列<br/>8/8 完成<br/>R005-R006, R011-R015, R019, R022"]
+        m3["M3<br/>2/2 完成<br/>R007-R008"]
+        m4["M4 / M4+<br/>2/2 完成<br/>R009, R013"]
+        m5["M5<br/>0/1 完成<br/>R010 暂缓"]
+    end
+
+    subgraph focus[当前进度判断]
+        direction TB
+        f1["完成率不是当前瓶颈<br/>M0-M4 已基本跑完"]
+        f2["当前重点<br/>固定 low-level reference stack"]
+        f3["下一步<br/>做 preference-to-KPI controllability"]
+        f4["再下一步<br/>做 cross-backbone routing stability"]
+        f5["暂缓<br/>OOD / SPO+ / RL / production router"]
+    end
+
+    m0 --> m1 --> m2 --> m3 --> m4 --> m5
+    m4 -.产出当前主判断.-> f1
+    f1 --> f2 --> f3 --> f4 --> f5
+
+    m0:::done
+    m1:::done
+    m2:::done
+    m3:::done
+    m4:::done
+    m5:::defer
+    f1:::note
+    f2:::current
+    f3:::next
+    f4:::next
+    f5:::defer
+```

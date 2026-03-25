@@ -1,9 +1,9 @@
 {
-  "phase": "anchor",
-  "round": 0,
-  "threadId": null,
-  "last_score": null,
-  "last_verdict": null,
-  "status": "in_progress",
+  "phase": "done",
+  "round": 2,
+  "threadId": "019d2415-5ff8-78b2-bc91-6ffbb8249089",
+  "last_score": 7.0,
+  "last_verdict": "REVISE",
+  "status": "completed",
   "timestamp": "2026-03-25T00:00:00"
 }

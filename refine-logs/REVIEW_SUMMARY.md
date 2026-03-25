@@ -1,48 +1,55 @@
-# 评审摘要
+# Review Summary
 
-## 初始问题
+**Problem**: 在外生时间序列驱动控制里，如何让更好的 forecasting 稳定转化成更好的下游控制，而不是只降低平均 forecast error。
+**Initial Approach**: 最初同时考虑 decision-focused training、uncertainty fallback、language-conditioned routing、Grid2Op transfer。
+**Date**: 2026-03-25
+**Rounds**: 2 external review rounds + 2 internal refinement writes
+**Final Score**: 7.0 / 10
+**Final Verdict**: REVISE
 
-当前 LCDFFC 的研究想法是否已经足够成熟、足够可行，并且具有足够的 novelty，能够支撑一篇较强的 CCF-A 风格论文？
+## Problem Anchor
+- Bottom-line problem:
+  Build a publishable method for exogenous time-series-driven control where better forecasting translates into reliable downstream control gains rather than only lower forecast error.
+- Must-solve bottleneck:
+  In forecast-then-control pipelines, the controller only cares about a small subset of future windows and channels, but standard training treats all forecast errors roughly equally. This mismatch is why stronger forecasters often fail to produce stable KPI gains.
+- Non-goals:
+  Not trying to build a new time-series foundation model, not using LLMs to output low-level actions, not making RL the main method, and not forcing a multi-environment paper in the first version.
+- Constraints:
+  Start from CityLearn battery control, keep the current low-level QP stack fixed, use modest compute, and keep the main method small enough to implement and validate quickly in the current repository.
+- Success condition:
+  With the same controller, the proposed training method should produce more consistent cost / carbon / peak improvements than plain uniform forecast training, and the gain should be traceable to better accuracy on controller-critical future windows.
 
-## 简短回答
+## Round-by-Round Resolution Log
 
-- **工程成熟度**：是，当前项目已经有一个可信的基础系统
-- **论文成熟度**：还没有，在当前 broad form 下还不够收敛
-- **可行性**：有，只要范围进一步缩小
-- **novelty**：按当前已实现内容来看不够；收缩后有潜力
+| Round | Main Reviewer Concerns | What This Round Simplified / Changed | Solved? | Remaining Risk |
+|---|---|---|---|---|
+| 1 | broad idea 太宽；主贡献不唯一；routing 还不够 paper-tight | 先把 thesis 从 broad roadmap 缩到 high-level routing | partial | language 是否必要仍然答不出来 |
+| 2 | routing 像 wrapper；language necessity 不足；主论文更该押 forecast-side bottleneck | 明确 pivot 到 CSFT：固定 controller，只改 forecast loss；routing 降到 appendix / future work | yes | sensitivity labels 是否足够稳、增益是否足够大 |
 
-## 主要批评点
+## Overall Evolution
+- 最初的 broad plan 更像研究路线图，不像一篇论文。
+- 第一轮收缩把多条线先压到 routing thesis，但外部 reviewer 继续指出 language 证据不够。
+- 第二轮 review 给出更清楚的结论：**第一篇论文的真正主线应该是 controller-sensitive forecast refinement，而不是 language-conditioned routing。**
+- 最终 proposal 把新方法压到一个机制：离线 sensitivity labels + mixed weighted forecast loss。
+- 实验包也被压缩到：一个主 controller、一个主 backbone、三个关键 ablations、三个 test views。
 
-1. 当前想法太宽，混合了多个潜在论文方向
-2. 已实现的 `forecast + QP` 虽然有价值，但本身 novelty 不足
-3. LLM 的角色方向是对的，但还没有清晰到能成为论文主贡献
-4. 当前评估还不能很好隔离“这篇论文真正的主张”
-5. 项目现在更像路线图，而不像论文
+## Final Status
+- Anchor status: preserved
+- Focus status: tight
+- Modernity status: intentionally conservative
+- Strongest parts of final method:
+  - 机制小
+  - 和当前 repo 主路径完全匹配
+  - 有清楚的 matched / mismatched controller defense
+  - 有明确的 mechanism plot
+- Remaining weaknesses:
+  - 还没有真实结果支撑 CSFT
+  - sensitivity label generation 可能有噪声
+  - 如果增益只在个别 slice 出现，论文还不够强
 
-## 本次保留了什么
-
-- 原始问题锚点被保留了
-- 低层 `forecast + QP` 主循环继续作为基础系统存在
-- LLM 仍然放在高层目标 / 约束路由层，而不是低层直接动作层
-
-## 本次明确拒绝了什么
-
-- 把 uncertainty、decision-focused learning、LLM routing、第二 benchmark 迁移同时做成一篇论文的并列贡献
-- 把当前固定权重闭环本身当成最终 novelty
-- 把整篇论文写成泛化的“LLM for energy control”
-
-## 收缩后的主张
-
-论文应该集中在：
-
-> 面向偏好变化场景的、语言条件化的 forecast-then-control 高层目标路由
-
-## 这次收缩带来的变化
-
-- 低层控制器从“主贡献”变成“基础设施”
-- 高层路由机制变成主贡献
-- decision-focused learning 和 uncertainty 降级为可选后续工作或 appendix 层扩展
-
-## 当前建议
-
-下一步应该沿收缩后的方案推进，而不是继续保持 broad roadmap 结构。
+## Final Recommendation
+1. 主论文改成 CSFT，不再主打 routing。
+2. 主 controller 固定 `qp_carbon`。
+3. 先只用一个主 backbone 跑通最小验证包。
+4. routing 不进主结果，最多放 appendix motivation。
+5. 下一步直接进入 experiment plan / implementation，而不是继续做 idea-level 扩展。

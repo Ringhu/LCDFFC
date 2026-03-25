@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2200" height="1400" viewBox="0 0 2200 1400">
+  <defs>
+    <style>
+      .title { font: 700 48px Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; fill: #111827; }
+      .subtitle { font: 400 24px Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; fill: #374151; }
+      .section { font: 700 32px Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; fill: #111827; }
+      .body { font: 400 25px Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; fill: #1F2937; }
+      .small { font: 400 22px Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; fill: #374151; }
+      .badge { font: 700 24px Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; fill: #111827; }
+    </style>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 z" fill="#4B5563"/>
+    </marker>
+  </defs>
+
+  <rect width="2200" height="1400" fill="#FFFFFF"/>
+  <text x="80" y="90" class="title">LCDFFC 当前实验路线图</text>
+  <text x="80" y="135" class="subtitle">结论：M0-M4 的主要历史轮次已经完成。现在重点不是继续扩名字，而是先把 low-level reference stack 和 controllability 证据确定下来。</text>
+
+  <rect x="80" y="190" width="460" height="980" rx="20" fill="#ECFDF5" stroke="#10B981" stroke-width="3"/>
+  <text x="110" y="245" class="section">已完成</text>
+
+  <rect x="110" y="285" width="400" height="140" rx="16" fill="#D1FAE5" stroke="#059669" stroke-width="2"/>
+  <text x="135" y="325" class="badge">M0 / M0+</text>
+  <text x="135" y="365" class="body">R001-R002, R018</text>
+  <text x="135" y="402" class="small">regime 协议、评分规则、event-driven 协议</text>
+
+  <rect x="110" y="450" width="400" height="210" rx="16" fill="#D1FAE5" stroke="#059669" stroke-width="2"/>
+  <text x="135" y="490" class="badge">M1 / M1+ / M1++ / M1+++ </text>
+  <text x="135" y="530" class="body">R003-R004, R016-R017</text>
+  <text x="135" y="567" class="body">R020-R021, R023-R026</text>
+  <text x="135" y="607" class="small">forecast + QP、backbone 扩展、foundation forecast、</text>
+  <text x="135" y="642" class="small">controller diagnosis 都已经跑过</text>
+
+  <rect x="110" y="685" width="400" height="180" rx="16" fill="#D1FAE5" stroke="#059669" stroke-width="2"/>
+  <text x="135" y="725" class="badge">M2 / M2+ / M2++ / M2+++ </text>
+  <text x="135" y="765" class="body">R005-R006, R011-R015</text>
+  <text x="135" y="802" class="body">R019, R022</text>
+  <text x="135" y="842" class="small">heuristic / text router / prompt-only router / transfer</text>
+
+  <rect x="110" y="890" width="400" height="120" rx="16" fill="#D1FAE5" stroke="#059669" stroke-width="2"/>
+  <text x="135" y="930" class="badge">M3</text>
+  <text x="135" y="970" class="body">R007-R008</text>
+  <text x="135" y="1005" class="small">router ablation 与 fixed-weight coverage</text>
+
+  <rect x="110" y="1035" width="400" height="110" rx="16" fill="#D1FAE5" stroke="#059669" stroke-width="2"/>
+  <text x="135" y="1075" class="badge">M4 / M4+</text>
+  <text x="135" y="1115" class="body">R009, R013</text>
+
+  <rect x="620" y="190" width="460" height="980" rx="20" fill="#EFF6FF" stroke="#2563EB" stroke-width="3"/>
+  <text x="650" y="245" class="section">当前重点</text>
+
+  <rect x="650" y="295" width="400" height="170" rx="16" fill="#DBEAFE" stroke="#2563EB" stroke-width="2"/>
+  <text x="675" y="340" class="badge">1. 固定 low-level reference stack</text>
+  <text x="675" y="385" class="body">- 1 个主 controller</text>
+  <text x="675" y="422" class="body">- 1 个经典 learned backbone</text>
+  <text x="675" y="459" class="body">- 1 个当前最强 foundation backbone</text>
+
+  <rect x="650" y="495" width="400" height="180" rx="16" fill="#DBEAFE" stroke="#2563EB" stroke-width="2"/>
+  <text x="675" y="540" class="badge">2. 做 preference-to-KPI controllability</text>
+  <text x="675" y="585" class="body">- carbon 权重增大后，carbon 是否稳定下降</text>
+  <text x="675" y="622" class="body">- peak 权重增大后，peak 是否稳定改善</text>
+  <text x="675" y="659" class="body">- 各 regime 是否形成清楚 trade-off</text>
+
+  <rect x="650" y="705" width="400" height="140" rx="16" fill="#DBEAFE" stroke="#2563EB" stroke-width="2"/>
+  <text x="675" y="750" class="badge">3. 统一 artifact</text>
+  <text x="675" y="795" class="body">统一 schema、统一指标、统一输出目录</text>
+
+  <rect x="1140" y="190" width="460" height="980" rx="20" fill="#FFFBEB" stroke="#F59E0B" stroke-width="3"/>
+  <text x="1170" y="245" class="section">下一步</text>
+
+  <rect x="1170" y="295" width="400" height="185" rx="16" fill="#FEF3C7" stroke="#D97706" stroke-width="2"/>
+  <text x="1195" y="340" class="badge">A. cross-backbone routing stability</text>
+  <text x="1195" y="385" class="body">在 2-3 个 frozen low-level stack 上</text>
+  <text x="1195" y="422" class="body">重复 event-driven routing</text>
+  <text x="1195" y="459" class="body">先看方向是否一致，再决定结论能写多强</text>
+
+  <rect x="1170" y="510" width="400" height="155" rx="16" fill="#FEF3C7" stroke="#D97706" stroke-width="2"/>
+  <text x="1195" y="555" class="badge">B. router 可验证证据</text>
+  <text x="1195" y="600" class="body">把 bad JSON / fallback / 调用频率</text>
+  <text x="1195" y="637" class="body">写成可复核结果</text>
+
+  <rect x="1170" y="695" width="400" height="170" rx="16" fill="#FEF3C7" stroke="#D97706" stroke-width="2"/>
+  <text x="1195" y="740" class="badge">C. 修正 R026 的说法</text>
+  <text x="1195" y="785" class="body">更准确的表述：</text>
+  <text x="1195" y="822" class="body">cost / carbon 在两条 backbone 上都改善，</text>
+  <text x="1195" y="859" class="body">但不是所有 KPI 都一致占优</text>
+
+  <rect x="1660" y="190" width="460" height="980" rx="20" fill="#F9FAFB" stroke="#9CA3AF" stroke-width="3"/>
+  <text x="1690" y="245" class="section">暂缓项</text>
+
+  <rect x="1690" y="295" width="400" height="120" rx="16" fill="#F3F4F6" stroke="#6B7280" stroke-width="2"/>
+  <text x="1715" y="340" class="badge">M5 / R010</text>
+  <text x="1715" y="380" class="body">OOD weather / price 扩展</text>
+
+  <rect x="1690" y="445" width="400" height="110" rx="16" fill="#F3F4F6" stroke="#6B7280" stroke-width="2"/>
+  <text x="1715" y="490" class="badge">SPO+ feasibility check</text>
+
+  <rect x="1690" y="585" width="400" height="150" rx="16" fill="#F3F4F6" stroke="#6B7280" stroke-width="2"/>
+  <text x="1715" y="630" class="badge">以后再做</text>
+  <text x="1715" y="675" class="body">RL / OOD / production router</text>
+  <text x="1715" y="712" class="body">继续扩更多 router 版本或弱 baseline</text>
+
+  <line x1="540" y1="680" x2="620" y2="680" stroke="#4B5563" stroke-width="5" marker-end="url(#arrow)"/>
+  <line x1="1080" y1="680" x2="1140" y2="680" stroke="#4B5563" stroke-width="5" marker-end="url(#arrow)"/>
+  <line x1="1600" y1="680" x2="1660" y2="680" stroke="#4B5563" stroke-width="5" marker-end="url(#arrow)"/>
+
+  <rect x="620" y="1220" width="980" height="110" rx="16" fill="#F5F3FF" stroke="#7C3AED" stroke-width="2"/>
+  <text x="650" y="1270" class="badge">当前主判断</text>
+  <text x="650" y="1310" class="body">高层 routing 结论仍受 low-level stack 影响。先把参考底座确定下来，再继续做 backbone 之间的高层比较。</text>
+</svg>

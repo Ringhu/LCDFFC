@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2200" height="1280" viewBox="0 0 2200 1280">
+  <defs>
+    <style>
+      .title { font: 700 48px Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; fill: #111827; }
+      .subtitle { font: 400 24px Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; fill: #374151; }
+      .section { font: 700 30px Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; fill: #111827; }
+      .body { font: 400 25px Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; fill: #1F2937; }
+      .small { font: 400 22px Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; fill: #374151; }
+      .badge { font: 700 24px Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; fill: #111827; }
+      .count { font: 700 34px Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; fill: #065F46; }
+      .countGrey { font: 700 34px Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; fill: #4B5563; }
+    </style>
+  </defs>
+
+  <rect width="2200" height="1280" fill="#FFFFFF"/>
+  <text x="80" y="90" class="title">LCDFFC 当前实验进度图</text>
+  <text x="80" y="135" class="subtitle">结论：当前瓶颈不是补更多旧轮次，而是把已经跑出来的结果整理成统一 reference stack，然后继续 controllability 和 cross-backbone stability。</text>
+
+  <text x="80" y="210" class="section">里程碑完成度</text>
+
+  <rect x="80" y="245" width="320" height="260" rx="18" fill="#ECFDF5" stroke="#10B981" stroke-width="3"/>
+  <text x="110" y="295" class="badge">M0 / M0+</text>
+  <text x="110" y="345" class="count">3 / 3 已完成</text>
+  <text x="110" y="395" class="body">R001-R002, R018</text>
+  <text x="110" y="435" class="small">协议定义、评分规则、event-driven 协议</text>
+
+  <rect x="430" y="245" width="320" height="260" rx="18" fill="#ECFDF5" stroke="#10B981" stroke-width="3"/>
+  <text x="460" y="295" class="badge">M1 系列</text>
+  <text x="460" y="345" class="count">10 / 10 已完成</text>
+  <text x="460" y="395" class="body">R003-R004, R016-R017</text>
+  <text x="460" y="432" class="body">R020-R021, R023-R026</text>
+  <text x="460" y="472" class="small">forecast + control / foundation / controller diagnosis</text>
+
+  <rect x="780" y="245" width="320" height="260" rx="18" fill="#ECFDF5" stroke="#10B981" stroke-width="3"/>
+  <text x="810" y="295" class="badge">M2 系列</text>
+  <text x="810" y="345" class="count">8 / 8 已完成</text>
+  <text x="810" y="395" class="body">R005-R006, R011-R015</text>
+  <text x="810" y="432" class="body">R019, R022</text>
+  <text x="810" y="472" class="small">router / review-selected 改进 / transfer</text>
+
+  <rect x="1130" y="245" width="320" height="260" rx="18" fill="#ECFDF5" stroke="#10B981" stroke-width="3"/>
+  <text x="1160" y="295" class="badge">M3</text>
+  <text x="1160" y="345" class="count">2 / 2 已完成</text>
+  <text x="1160" y="395" class="body">R007-R008</text>
+  <text x="1160" y="435" class="small">router ablation 与 fixed-weight coverage</text>
+
+  <rect x="1480" y="245" width="320" height="260" rx="18" fill="#ECFDF5" stroke="#10B981" stroke-width="3"/>
+  <text x="1510" y="295" class="badge">M4 / M4+</text>
+  <text x="1510" y="345" class="count">2 / 2 已完成</text>
+  <text x="1510" y="395" class="body">R009, R013</text>
+  <text x="1510" y="435" class="small">fallback 与 targeted ablation</text>
+
+  <rect x="1830" y="245" width="290" height="260" rx="18" fill="#F3F4F6" stroke="#6B7280" stroke-width="3"/>
+  <text x="1860" y="295" class="badge">M5</text>
+  <text x="1860" y="345" class="countGrey">0 / 1</text>
+  <text x="1860" y="395" class="body">R010</text>
+  <text x="1860" y="435" class="small">OOD weather / price，当前暂缓</text>
+
+  <text x="80" y="610" class="section">当前重点、下一步、暂缓项</text>
+
+  <rect x="80" y="650" width="640" height="500" rx="20" fill="#EFF6FF" stroke="#2563EB" stroke-width="3"/>
+  <text x="110" y="705" class="section">当前重点</text>
+  <text x="110" y="770" class="badge">1. 固定 reference stack</text>
+  <text x="140" y="815" class="body">- 主 controller：当前最强 QP 变体</text>
+  <text x="140" y="852" class="body">- learned backbone：保留 1 个经典基线</text>
+  <text x="140" y="889" class="body">- foundation backbone：保留 1 个当前最强候选</text>
+  <text x="110" y="960" class="badge">2. 做 controllability</text>
+  <text x="140" y="1005" class="body">- 检查 carbon / peak / balanced 的 KPI 映射是否稳定</text>
+  <text x="110" y="1075" class="badge">3. 统一 artifact</text>
+  <text x="140" y="1120" class="body">- 统一 schema / 指标 / 输出目录结构</text>
+
+  <rect x="780" y="650" width="660" height="500" rx="20" fill="#FFFBEB" stroke="#F59E0B" stroke-width="3"/>
+  <text x="810" y="705" class="section">下一步</text>
+  <text x="810" y="770" class="badge">A. cross-backbone routing stability</text>
+  <text x="840" y="815" class="body">- 在 2-3 个 frozen stack 上重复 event-driven routing</text>
+  <text x="840" y="852" class="body">- 只看方向是否一致，不急着继续扩更多 router</text>
+  <text x="810" y="925" class="badge">B. router 结果证据化</text>
+  <text x="840" y="970" class="body">- 把 bad JSON / fallback / 调用频率整理成可验证结果</text>
+  <text x="810" y="1040" class="badge">C. 更新 tracker 表述</text>
+  <text x="840" y="1085" class="body">- R026 应改成：cost / carbon 在两条 backbone 上都改善，</text>
+  <text x="840" y="1122" class="body">  但不是所有 KPI 都一致占优</text>
+
+  <rect x="1500" y="650" width="620" height="500" rx="20" fill="#F9FAFB" stroke="#9CA3AF" stroke-width="3"/>
+  <text x="1530" y="705" class="section">暂缓项</text>
+  <text x="1530" y="770" class="badge">- M5 / R010</text>
+  <text x="1560" y="815" class="body">OOD weather / price</text>
+  <text x="1530" y="890" class="badge">- 以后再做</text>
+  <text x="1560" y="935" class="body">SPO+ feasibility check</text>
+  <text x="1560" y="972" class="body">RL / production router</text>
+  <text x="1560" y="1009" class="body">继续堆更多 router 名字或弱 baseline controller</text>
+
+  <rect x="80" y="1185" width="2040" height="55" rx="14" fill="#F5F3FF" stroke="#7C3AED" stroke-width="2"/>
+  <text x="110" y="1222" class="body">一句话总结：旧轮次已经足够多。现在要先把低层参考协议确定下来，再继续高层 routing 比较。</text>
+</svg>

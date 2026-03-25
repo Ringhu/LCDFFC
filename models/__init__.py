@@ -1,6 +1,12 @@
 """Forecast models module."""
 
 from models.base_forecaster import BaseForecaster
+from models.csft import (
+    build_event_window_weights,
+    build_manual_horizon_weights,
+    clip_and_normalize_sensitivity,
+    compute_mixed_weighted_loss,
+)
 from models.factory import build_forecaster
 from models.granite_patchtst_forecaster import GranitePatchTSTForecaster
 from models.gru_forecaster import GRUForecaster
@@ -16,4 +22,8 @@ __all__ = [
     "TransformerForecaster",
     "GranitePatchTSTForecaster",
     "build_forecaster",
+    "clip_and_normalize_sensitivity",
+    "build_manual_horizon_weights",
+    "build_event_window_weights",
+    "compute_mixed_weighted_loss",
 ]

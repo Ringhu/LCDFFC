@@ -80,15 +80,19 @@ def obs_to_features(obs: list | np.ndarray, obs_names: list[str]) -> np.ndarray:
     ], dtype=np.float32)
 
 
+def load_oracle_series(path: str, col_idx: int) -> np.ndarray:
+    """Load a single oracle time series column from prepared forecast data."""
+    loaded = np.load(path, allow_pickle=True)
+    return loaded["data"][:, col_idx].astype(np.float32)
+
+
 def load_oracle_targets(path: str, target_cols: list[int] | None = None) -> np.ndarray:
     """Load oracle future targets from prepared forecast data."""
     cols = TARGET_COLS if target_cols is None else target_cols
-    loaded = np.load(path, allow_pickle=True)
-    return loaded["data"][:, cols].astype(np.float32)
+    return np.stack([load_oracle_series(path, col) for col in cols], axis=1).astype(np.float32)
 
 
 def get_battery_params(env) -> dict[str, list[float]]:
-    """Extract per-building battery parameters from a CityLearn environment."""
     capacities = []
     nominal_powers = []
     efficiencies = []
@@ -212,6 +216,8 @@ def run_forecast_control(
     else:
         raise ValueError(f"Unsupported forecast_mode: {forecast_mode}")
 
+    oracle_carbon = load_oracle_series(oracle_data_path, 3)
+
     # CityLearn env
     env = CityLearnEnv(schema=schema, central_agent=True)
     obs_names = env.observation_names[0]
@@ -264,23 +270,29 @@ def run_forecast_control(
         else:
             qp_forecast = build_myopic_forecast(current_features, ctrl.horizon)
 
-        # The same normalized action is broadcast to all buildings, so the
-        # controller tracks each battery's SOC separately.
         soc_vals = get_current_socs(env)
 
-        # Get action from controller
+        carbon_forecast = None
+        if weights.get("carbon", 0.0) > 0:
+            carbon_forecast = oracle_carbon[step + 1 : step + 1 + ctrl.horizon]
+            if len(carbon_forecast) == 0:
+                carbon_forecast = oracle_carbon[-1:]
+            if len(carbon_forecast) < ctrl.horizon:
+                pad = np.repeat(carbon_forecast[-1:], ctrl.horizon - len(carbon_forecast), axis=0)
+                carbon_forecast = np.concatenate([carbon_forecast, pad], axis=0)
+            carbon_forecast = carbon_forecast.astype(np.float32)
+
         action = ctrl.act(
             state={"soc": soc_vals},
             forecast=qp_forecast,
             weights=weights,
             constraints=constraints,
+            carbon_intensity=carbon_forecast,
         )
         battery_action = float(action[0])
 
-        # Build full action vector: set electrical_storage actions only
-        action_names = env.action_names[0]
         full_action = [0.0] * num_actions
-        for i, name in enumerate(action_names):
+        for i, name in enumerate(env.action_names[0]):
             if name == "electrical_storage":
                 full_action[i] = battery_action
         full_action = [full_action]

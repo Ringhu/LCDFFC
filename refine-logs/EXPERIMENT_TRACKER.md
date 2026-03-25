@@ -4,11 +4,11 @@
 
 | Run ID | Milestone | Purpose | System / Variant | Split | Metrics | Priority | Status | Notes |
 |--------|-----------|---------|------------------|-------|---------|----------|--------|-------|
-| R101 | M0 | label sanity | `qp_carbon` sensitivity label generation on small train subset | train-mini | label stats / rank corr / top-mass | MUST | TODO | 先检查 finite-difference label 是否可用 |
-| R102 | M0 | metric sanity | stress subset masks + chronological split + oracle-gap evaluator | val | mask coverage / KPI script sanity | MUST | TODO | 先把 standard / carbon-price stress / peak stress 三种 view 固定下来 |
-| R103 | M1 | baseline | GRU + uniform loss + `qp_carbon` | val/test | cost / carbon / peak / RMSE / MAE | MUST | TODO | 当前主 baseline |
-| R104 | M1 | upper bound | oracle forecast + `qp_carbon` | test | cost / carbon / peak | MUST | TODO | 用来算 oracle gap closure |
-| R105 | M2 | pilot | GRU + CSFT (1 seed) + `qp_carbon` | val/test | cost / carbon / peak / top-decile error | MUST | TODO | 先判断主 thesis 有没有正信号 |
+| R101 | M0 | label sanity | `qp_carbon` sensitivity label generation on small train subset | train-mini | label stats / rank corr / top-mass | MUST | DONE | small sanity passed；`normalized_mean≈1.00` |
+| R102 | M0 | metric sanity | stress subset masks + chronological split + oracle-gap evaluator | val | mask coverage / KPI script sanity | MUST | DONE | split / stress mask diagnostics 已生成 |
+| R103 | M1 | baseline | GRU + uniform loss + `qp_carbon` | val/test | cost / carbon / peak / RMSE / MAE | MUST | IN_PROGRESS | 正在补 full-budget uniform baseline；3-epoch sanity 已过 |
+| R104 | M1 | upper bound | oracle forecast + `qp_carbon` | test | cost / carbon / peak | MUST | DONE | cost=33.8339, carbon=511.5938, peak=16.2272 |
+| R105 | M2 | pilot | GRU + CSFT (1 seed) + `qp_carbon` | val/test | cost / carbon / peak / top-decile error | MUST | DONE | 训练已完成；best val loss=0.121692，待 learned-control KPI 对比 |
 | R106 | M3 | heuristic baseline | GRU + manual horizon weighting + `qp_carbon` | test | cost / carbon / peak / top-decile error | MUST | TODO | 防守“简单窗口 weighting 已经够用” |
 | R107 | M3 | heuristic baseline | GRU + event-window weighting + `qp_carbon` | test | cost / carbon / peak / top-decile error | MUST | TODO | 防守“手工事件 weighting 已经够用” |
 | R108 | M3 | main result | GRU + CSFT (3 seeds) + `qp_carbon` | test | cost / carbon / peak / oracle gap | MUST | TODO | 主表结果 |

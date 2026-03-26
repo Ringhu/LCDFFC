@@ -1,9 +1,9 @@
 {
-  "phase": "done",
-  "round": 3,
-  "threadId": "019d25b8-ff0d-79c0-a0a3-8dc3ed458e28",
-  "last_score": 8.6,
+  "phase": "review",
+  "round": 1,
+  "threadId": "019d27af-5273-70b1-80f4-c34a819fcc24",
+  "last_score": 6.0,
   "last_verdict": "REVISE",
-  "status": "completed",
+  "status": "in_progress",
   "timestamp": "2026-03-26T00:00:00"
 }

@@ -2,134 +2,163 @@
 
 ## Context
 
-这轮 review 针对的是 **CSFT pilot 失败之后** 的新 proposal，重点不再是“继续扩方法”，而是判断：
+本轮 review 针对的是 preflight failure 之后的新 pivot：
 
-1. 当前负结果是否能被收束成一个 publishable 的机制问题；
-2. 这个“稳定化 controller-sensitive supervision”路线，是否已经足够像一个方法，而不是 debug 清单。
+- 不是继续救 raw slot-wise CSFT；
+- 而是把 raw controller relevance 压缩成一个更稳定的 global prior。
+
+外部 reviewer 的核心意见很明确：
+
+1. 这个 pivot 本身是连贯的；
+2. 但如果 global prior 最终看起来只是一个 front-loaded heuristic mask，那么论文会塌成“controller-justified heuristic”；
+3. 因此 pivot 必须进一步强调 **controller-specificity**，最好把 prior 建立在 QP 的解析梯度 / dual 信息上，而不是简单平均 finite-difference 权重。
 
 ## Parsed Scores
 
 | Dimension | Score | Notes |
 |---|---:|---|
-| Problem Fidelity | 8.5 | 仍然紧扣“forecast training 要服务下游 control KPI”这个原始问题 |
-| Method Specificity | 7.5 | 主接口和训练路径已经清楚，但具体 operator 还没完全冻结 |
-| Contribution Quality | 7.0 | 机制主线清楚了，但还容易被看成 weight tuning + diagnostics |
-| Frontier Leverage | 8.0 | 保持克制是对的，没有不必要的 buzzword |
-| Feasibility | 8.5 | 低成本、可复用现有 checkpoint 和 pipeline |
-| Validation Focus | 8.0 | 实验块很精简，而且直接围绕 claim |
-| Venue Readiness | 6.0 | 还偏像 troubleshooting protocol，不像 paper-ready method |
+| Problem Fidelity | 8 | 仍然紧扣 forecast-training-for-control 这个原始问题 |
+| Method Specificity | 6 | prior 的统计定义、scale handling、alpha 等还不够冻结 |
+| Contribution Quality | 6 | 有塌成 heuristic horizon mask 的风险 |
+| Frontier Leverage | 4 | 当前更像 local patch，缺少与 decision-focused / controller-derived sensitivity 的更 principled 连接 |
+| Feasibility | 9 | 低成本、可实现、与当前仓库兼容 |
+| Validation Focus | 7 | 验证块不算散，但核心方法还不够强 |
+| Venue Readiness | 5 | 还不够像顶会方法，除非 controller-specific prior 被立住 |
 
 ## Overall Score
 
-**7.8 / 10**
+**6.0 / 10**
 
 ## Verdict
 
 **REVISE**
 
-## Main Weakness Below 7
+## Weaknesses Below 7
 
-### Venue Readiness — 6.0
-- **Specific weakness**:
-  当前 proposal 仍然像“先检查、再修权重、再看结果”的流程，而不是一个清楚的算法性贡献。可选 fallback（如 bucketed weights）也会让主线变松。
-- **Concrete fix at the method level**:
-  冻结一个**唯一的 stabilized-weight operator**，并预注册一个**清楚的 acceptance criterion**。
-  - 例如：`clip@q95 -> log1p(s/tau) -> per-sample normalize -> alpha=0.85`
-  - 并规定：必须同时满足“top-decile error 改善”以及“至少一个 KPI 改善且 overall MAE 不超过容忍退化阈值”，否则就不把它当作有效方法。
+### Method Specificity — 6
+- **Weakness**:
+  `m_train`、`alpha`、channel scale handling 仍然不够明确，prior 还不完全是一个固定算法。
+- **Concrete fix**:
+  明确 prior 是 global 还是 per-channel normalized；固定 `alpha`；给出 channel-wise normalization，避免某个 channel 的 scale 直接泄漏到 prior。
 - **Priority**: IMPORTANT
 
-## Simplification Opportunities
+### Contribution Quality — 6
+- **Weakness**:
+  global prior 有塌成 hand-crafted horizon weighting 的风险。
+- **Concrete fix**:
+  用 **QP dual / analytic objective gradient** 代替简单的 raw finite-difference 平均，构造 controller-specific prior。
+- **Priority**: CRITICAL
 
-1. 把 bucketed-weight fallback 从主方法里删掉，只保留为 contingency / appendix note。
-2. 把 D1 + D2 合并成一个统一的 `label validity preflight`，避免 proposal 读起来像流程图。
-3. 不再列多个 transform/search space；固定一个 transform 和一个 `alpha`。
+### Frontier Leverage — 4
+- **Weakness**:
+  当前写法太像 local patch，和更 principled 的 decision-focused/controller-gradient 连接不够。
+- **Concrete fix**:
+  增加一个简短 derivation：`G(h,c)` 近似最优控制目标对 forecast cell 的期望绝对梯度。
+- **Priority**: IMPORTANT
+
+### Venue Readiness — 5
+- **Weakness**:
+  如果 prior 最后和一个简单 front-loaded mask 很像，这条线会失去论文强度。
+- **Concrete fix**:
+  把方法主张改成 **controller-dual prior** 或 **controller-gradient prior**，并要求它在表征上明显不同于纯 horizon heuristic。
+- **Priority**: CRITICAL
+
+## Simplification Opportunities
+- Drop top-K binarized prior from the main line.
+- Remove redundant clipping if analytic dual/gradient prior is already smooth enough.
+- Fix one alpha only; do not let this become another hyperparameter study.
 
 ## Modernization Opportunities
-
-**NONE**
+- 不需要引入 LLM / RL。
+- 真正合适的 modern/principled move 是：用 **analytic QP gradients / dual variables** 替代 brute-force noisy raw finite differences。
 
 ## Drift Warning
-
-**NONE**
+如果 global prior 最终只是 generic short-horizon mask，那么方法会从“controller-aware supervision”漂移成“heuristic weighting with controller justification”。这属于需要避免的 drift。
 
 ## Raw External Response
 
 <details>
 <summary>Codex raw review</summary>
 
-Below is a method‑focused review aligned with your constraints (smallest adequate mechanism, no contribution sprawl, no extra experiments unless core‑claim‑critical).
+Below is a **method‑focused senior‑review** aligned to your constraints and the preflight failure.
+
+---
+
+## High‑level take
+The pivot is coherent and genuinely anchored to the failure: it **compresses** the controller signal rather than trying to rescue raw per‑sample weights. That is a clean, minimal move.
+**Main risk:** the global prior can collapse into a near‑heuristic horizon mask, making the contribution **too thin** for a top‑tier venue unless you show it is *controller‑derived* (not just “front‑loaded”). This is the critical pressure point.
 
 ---
 
 ## Scores (1–10)
 
-1. **Problem Fidelity: 8.5**
-   You stay anchored to “forecast training that improves downstream control KPIs” and keep the fixed controller + dataset + backbone. The method is explicitly about repairing the supervision signal, not changing the problem.
+1. **Problem Fidelity**: **8**
+2. **Method Specificity**: **6**
+3. **Contribution Quality**: **6**
+4. **Frontier Leverage**: **4**
+5. **Feasibility**: **9**
+6. **Validation Focus**: **7**
+7. **Venue Readiness**: **5**
 
-2. **Method Specificity: 7.5**
-   Most interfaces are clear (weights → loss, same pipeline), but key choices remain under‑specified (exact alignment check tolerance, precise clipping quantile, transform choice, smoothing kernel/window, acceptance criteria).
-
-3. **Contribution Quality: 7.0**
-   There is one dominant mechanism (stabilized controller‑sensitive supervision), but novelty risks being perceived as “weight tuning + diagnostics” unless you freeze a single, crisp operator and success criterion.
-
-4. **Frontier Leverage: 8.0**
-   Appropriately avoids buzzwords; modernity isn’t the bottleneck here.
-
-5. **Feasibility: 8.5**
-   Minimal compute, reuses checkpoints, no new models.
-
-6. **Validation Focus: 8.0**
-   The diagnostic‑first loop is minimal and directly tied to claims. No obvious bloat.
-
-7. **Venue Readiness: 6.0**
-   As written, it still reads like a careful troubleshooting protocol rather than a tight, publishable method. Needs a single frozen mechanism + pre‑specified pass/fail criterion to feel like a contribution, not a process.
+**Overall Score (weighted)**: **6**
 
 ---
 
-## OVERALL SCORE (weighted) = **7.8 / 10**
+## Dimensions < 7: Weakness → Fix → Priority
 
-(Weighted by: PF 15%, MS 20%, CQ 20%, FL 10%, Feas 15%, VF 15%, VR 5%)
+### 2) Method Specificity — **6**
+- **Weakness:** The prior construction is underspecified in key places: definition of `m_train`, how `alpha` is chosen, and whether `G(h,c)` is invariant to forecast scale across channels. This leaves the core method under‑determined.
+- **Concrete method fix:**
+  - Define `m_train` as **median(|s|)** per (h,c) or global median; state which and why.
+  - Fix `alpha` to a **single constant** (e.g., 0.5) justified by the preflight gate, or compute it from a closed‑form heuristic (e.g., match the expected weighted MAE mass to uniform).
+  - Add **channel‑wise normalization** for `s_(t,h,c)` before aggregation to avoid scale leakage (e.g., divide by baseline MAE per channel).
+- **Priority:** **IMPORTANT**
+
+### 3) Contribution Quality — **6**
+- **Weakness:** Risk of being indistinguishable from a hand‑crafted horizon weighting; the novelty can collapse into a “controller‑justified heuristic” without a clear controller‑specific signature.
+- **Concrete method fix:**
+  Replace log‑aggregation with a **controller‑consistent sensitivity statistic**:
+  - If `qp_carbon` is a QP, derive **dual variables or objective gradients** w.r.t. forecasted quantities and aggregate those as `G(h,c)`.
+  - This keeps the same controller and data, but yields a **principled, controller‑specific prior** that is not arbitrary smoothing.
+- **Priority:** **CRITICAL**
+
+### 4) Frontier Leverage — **4**
+- **Weakness:** No conceptual link to current decision‑focused forecasting literature; looks like a local patch.
+- **Concrete method fix:**
+  Add a **1‑paragraph derivation** (not extra modules) showing that `G(h,c)` approximates the expected absolute gradient of the controller objective w.r.t. each forecast cell, tying it to decision‑focused learning without changing the pipeline.
+- **Priority:** **IMPORTANT**
+
+### 7) Venue Readiness — **5**
+- **Weakness:** As written, the paper may read as “we tried a smoother weighting and it helped,” which is too weak for NeurIPS/ICML/ICLR without stronger theoretical framing of why this is controller‑calibrated and not just heuristic.
+- **Concrete method fix:**
+  - **Explicitly show** in the method section that `G(h,c)` is *derived from controller sensitivities* and **differs measurably from any fixed horizon‑only heuristic** (e.g., show a two‑line table of correlation with heuristic mask or relative entropy vs. heuristic).
+  - This is not an extra experiment; it is a **minimal method‑level characterization** of the prior.
+- **Priority:** **CRITICAL**
 
 ---
 
-## Weaknesses for Scores < 7
-
-### 7) Venue Readiness — **6.0**
-**Weakness:**
-The “method” is currently a pipeline of checks and optional transforms. Reviewers may see this as “diagnose, then tune weights,” not a crisp algorithmic contribution. The optional fallback (bucketed weights) also weakens focus unless explicitly scoped as contingency.
-
-**Concrete Method‑Level Fix:**
-Lock down a **single stabilized‑weight operator** and **pre‑register its acceptance criterion**. For example:
-- **Operator:** clip at train‑q95, apply `log1p(s/τ)` with fixed τ, per‑sample normalize, fixed `alpha=0.85`, no smoothing unless D1 shows rank signal but high variance.
-- **Acceptance:** must improve **top‑decile error** *and* at least one KPI without degrading overall MAE beyond a stated tolerance.
-If it fails, **explicitly scope the paper** as a falsification of raw CSFT rather than a method claim. This keeps the contribution sharp either way.
-
-**Priority:** IMPORTANT
+## Simplification Opportunities
+- **Drop the binarized top‑K prior** unless the continuous prior fails. It adds branching without adding conceptual strength.
+- **Remove q95 clipping** if you already log‑compress and normalize; keep one compression mechanism only.
+- **Fix alpha to a single constant** to avoid turning this into a hyper‑search paper.
 
 ---
 
-## Simplification Opportunities (delete/merge/reuse)
-
-1. **Remove the bucketed‑weight fallback from the main method.** Keep it as a contingency note or appendix. This tightens the single‑mechanism story.
-2. **Collapse D1+D2 into one “label validity check” preflight script.** This reduces procedural sprawl and makes the method feel more like a single algorithm.
-3. **Pick one transform + one alpha.** Listing multiple transforms (sqrt/log1p + smoothing + rank‑binning) reads like a search space. Freeze one to avoid “tuning.”
-
----
-
-## Modernization Opportunities
-
-**NONE** — The bottleneck is supervision validity, not model capacity or modern architecture. Any “modernization” would add noise, not signal.
+## Modernization Opportunities (non‑sprawl)
+- **Replace finite‑difference sensitivities with analytic QP gradients or duals** (if available).
+  This is still *one prior*, not a new system, but it makes the method defensible and modern.
 
 ---
 
 ## Drift Warning
-
-**NONE** — The proposal remains anchored to the original control‑sensitive forecasting problem.
+If `G(h,c)` ends up resembling a generic short‑horizon or manual mask, **the problem shifts** from “controller‑aware supervision” to “heuristic weighting with a controller justification.”
+That **would be drift** from the anchored problem. Make sure the prior is demonstrably controller‑specific.
 
 ---
 
-## Verdict: **REVISE**
+## Verdict
+**REVISE**
 
-Promising and well‑scoped, but not yet venue‑ready. Tighten to a single frozen stabilization operator with explicit acceptance criteria so the paper reads as a **mechanism**, not a **debugging checklist**.
+The pivot is the right direction, but it must **prove controller‑specificity** at the method level to avoid collapsing into a heuristic. If you tighten the prior definition and ground it in controller gradients/duals, this can become a clean, publishable minimal‑mechanism paper.
 
 </details>

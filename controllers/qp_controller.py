@@ -30,15 +30,6 @@ class QPController:
            + w_peak * peak_var + w_smooth * Σ(Δaction²)
 
     where net_load[t] = base_load[t] - solar[t] + action[t]
-
-    Args:
-        horizon: Planning horizon (number of steps).
-        num_buildings: Number of buildings (for central_agent mode).
-        battery_capacity: Battery capacity in kWh.
-        soc_min: Minimum SOC fraction.
-        soc_max: Maximum SOC fraction.
-        p_max: Maximum charge/discharge rate (normalized).
-        efficiency: Battery round-trip efficiency.
     """
 
     def __init__(
@@ -84,6 +75,28 @@ class QPController:
 
         return arr.astype(np.float32)
 
+    def _prepare_forecast(
+        self,
+        forecast: np.ndarray,
+        carbon_intensity: np.ndarray | None = None,
+    ) -> tuple[np.ndarray, np.ndarray | None]:
+        """Clip/pad forecast inputs to controller horizon."""
+        H = min(self.horizon, len(forecast))
+        fc = forecast[:H]
+        if fc.ndim == 1:
+            fc = fc.reshape(-1, 1)
+
+        if H < self.horizon:
+            pad = np.tile(fc[-1:], (self.horizon - H, 1))
+            fc = np.concatenate([fc, pad], axis=0)
+            H = self.horizon
+
+        carbon = carbon_intensity[:H] if carbon_intensity is not None else None
+        if carbon is not None and len(carbon) < H:
+            pad = np.repeat(carbon[-1:], H - len(carbon), axis=0)
+            carbon = np.concatenate([carbon, pad], axis=0)
+        return fc, carbon
+
     def act(
         self,
         state: dict[str, Any],
@@ -92,63 +105,57 @@ class QPController:
         constraints: dict[str, Any] | None = None,
         carbon_intensity: np.ndarray | None = None,
     ) -> np.ndarray:
-        """Solve QP and return the first action.
-
-        Args:
-            state: Must include "soc" — current SOC as float or list of floats.
-            forecast: Shape (horizon, 3) with [price, load, solar] columns.
-            weights: {"cost", "carbon", "peak", "smooth"} floats.
-            constraints: Optional {"reserve_soc": float, "max_charge_rate": float}.
-            carbon_intensity: Optional (horizon,) carbon intensity array.
-
-        Returns:
-            Action value(s) for the current timestep.
-        """
+        """Solve QP and return the first action."""
         constraints = constraints or {}
-        soc = state["soc"]
-        soc = self._as_array(soc, self.num_buildings)
-
-        # Clip forecast to horizon
-        H = min(self.horizon, len(forecast))
-        fc = forecast[:H]
-        if fc.ndim == 1:
-            fc = fc.reshape(-1, 1)
-
-        # Pad if forecast is shorter than horizon
-        if H < self.horizon:
-            pad = np.tile(fc[-1:], (self.horizon - H, 1))
-            fc = np.concatenate([fc, pad], axis=0)
-            H = self.horizon
-
-        carbon = carbon_intensity[:H] if carbon_intensity is not None else None
+        soc = self._as_array(state["soc"], self.num_buildings)
+        fc, carbon = self._prepare_forecast(forecast, carbon_intensity)
 
         result = self._build_and_solve(soc, fc, weights, constraints, carbon)
-
         if result is not None:
             return np.array([np.clip(result[0], -self.p_max, self.p_max)])
-        else:
-            return self.fallback.act(state)
+        return self.fallback.act(state)
 
-    def _build_and_solve(
+    def solve_with_diagnostics(
         self,
-        soc_init: float,
+        state: dict[str, Any],
         forecast: np.ndarray,
         weights: dict[str, float],
         constraints: dict[str, Any] | None = None,
         carbon_intensity: np.ndarray | None = None,
-    ) -> np.ndarray | None:
-        """Build and solve the QP problem.
+    ) -> dict[str, np.ndarray] | None:
+        """Solve the QP and return action sequence plus diagnostics.
 
-        Args:
-            soc_init: Current SOC fraction.
-            forecast: (horizon, num_cols) — at minimum [price, load, solar].
-            weights: Objective term weights.
-            constraints: Additional constraints.
-            carbon_intensity: Optional (horizon,) array.
-
-        Returns:
-            Optimal action sequence of shape (horizon,), or None if infeasible.
+        This is intended for analysis / supervision extraction only. Unlike
+        ``act()``, it does not apply the fallback policy when the QP fails.
         """
+        constraints = constraints or {}
+        soc = self._as_array(state["soc"], self.num_buildings)
+        fc, carbon = self._prepare_forecast(forecast, carbon_intensity)
+
+        result = self._build_and_solve(
+            soc,
+            fc,
+            weights,
+            constraints,
+            carbon,
+            collect_diagnostics=True,
+        )
+        if result is None:
+            return None
+        action_values, diagnostics = result
+        diagnostics["action"] = np.asarray(action_values, dtype=np.float32)
+        return diagnostics
+
+    def _build_and_solve(
+        self,
+        soc_init: np.ndarray,
+        forecast: np.ndarray,
+        weights: dict[str, float],
+        constraints: dict[str, Any] | None = None,
+        carbon_intensity: np.ndarray | None = None,
+        collect_diagnostics: bool = False,
+    ) -> np.ndarray | tuple[np.ndarray, dict[str, np.ndarray]] | None:
+        """Build and solve the QP problem."""
         constraints = constraints or {}
         H = self.horizon
         charge = cp.Variable(H, nonneg=True)
@@ -156,7 +163,6 @@ class QPController:
         action = charge - discharge
         soc = cp.Variable((self.num_buildings, H + 1))
 
-        # Extract forecast components
         prices = forecast[:H, COL_PRICE] if forecast.shape[1] > COL_PRICE else np.ones(H)
         base_load_avg = forecast[:H, COL_LOAD] if forecast.shape[1] > COL_LOAD else np.zeros(H)
         solar_avg = forecast[:H, COL_SOLAR] if forecast.shape[1] > COL_SOLAR else np.zeros(H)
@@ -164,81 +170,82 @@ class QPController:
         aggregate_solar = solar_avg * self.num_buildings
         aggregate_storage_power = float(np.sum(self.battery_nominal_power) * self.time_step_hours)
 
-        # Forecast load/solar are building averages; scale them back to district totals.
-        # Positive action means charging all building batteries with the same normalized ratio.
         net_load = aggregate_base_load - aggregate_solar + aggregate_storage_power * action
         grid_import = cp.Variable(H, nonneg=True)
 
-        # === Objective terms ===
         objective_terms = []
-
-        # 1) Electricity cost: Σ price[t] * max(net_load[t], 0)
-        w_cost = weights.get("cost", 0)
+        w_cost = weights.get("cost", 0.0)
         if w_cost > 0:
             objective_terms.append(w_cost * (prices @ grid_import))
 
-        # 2) Carbon emissions: Σ carbon[t] * max(net_load[t], 0)
-        w_carbon = weights.get("carbon", 0)
+        carbon = None
+        w_carbon = weights.get("carbon", 0.0)
         if w_carbon > 0 and carbon_intensity is not None:
             carbon = carbon_intensity[:H]
             objective_terms.append(w_carbon * (carbon @ grid_import))
 
-        # 3) Peak demand: epigraph formulation on import load.
-        w_peak = weights.get("peak", 0)
+        w_peak = weights.get("peak", 0.0)
+        peak_var = None
         if w_peak > 0:
             peak_var = cp.Variable()
             objective_terms.append(w_peak * peak_var)
-        else:
-            peak_var = None
 
-        # 4) Action smoothness: Σ (action[t] - action[t-1])²
-        w_smooth = weights.get("smooth", 0)
+        w_smooth = weights.get("smooth", 0.0)
         if w_smooth > 0:
             objective_terms.append(w_smooth * cp.sum_squares(action[1:] - action[:-1]))
 
-        # Tie-break toward zero action when the economic objective is flat.
         objective_terms.append(1e-6 * (cp.sum_squares(charge) + cp.sum_squares(discharge)))
-
         if not objective_terms:
             objective_terms.append(0)
-
         objective = cp.Minimize(sum(objective_terms))
 
-        # === Constraints ===
         charge_gain = (
             self.efficiency * self.battery_nominal_power * self.time_step_hours
         ) / self.battery_capacity
         discharge_gain = (
             self.battery_nominal_power * self.time_step_hours
         ) / (self.efficiency * self.battery_capacity)
-        constraints_list = [
-            soc[:, 0] == soc_init,
+
+        soc_init_constraint = soc[:, 0] == soc_init
+        dynamics_constraint = (
             soc[:, 1:] == soc[:, :-1]
             + cp.multiply(charge_gain[:, None], cp.reshape(charge, (1, H), order="C"))
-            - cp.multiply(discharge_gain[:, None], cp.reshape(discharge, (1, H), order="C")),
-            soc >= self.soc_min[:, None],
-            soc <= self.soc_max[:, None],
-            charge <= self.p_max,
-            discharge <= self.p_max,
-            grid_import >= net_load,
+            - cp.multiply(discharge_gain[:, None], cp.reshape(discharge, (1, H), order="C"))
+        )
+        soc_min_constraint = soc >= self.soc_min[:, None]
+        soc_max_constraint = soc <= self.soc_max[:, None]
+        charge_cap_constraint = charge <= self.p_max
+        discharge_cap_constraint = discharge <= self.p_max
+        import_constraint = grid_import >= net_load
+
+        constraints_list = [
+            soc_init_constraint,
+            dynamics_constraint,
+            soc_min_constraint,
+            soc_max_constraint,
+            charge_cap_constraint,
+            discharge_cap_constraint,
+            import_constraint,
         ]
 
-        # Peak epigraph constraint
+        peak_constraint = None
         if peak_var is not None:
-            constraints_list.append(grid_import <= peak_var)
+            peak_constraint = grid_import <= peak_var
+            constraints_list.append(peak_constraint)
 
-        # Reserve SOC constraint
+        reserve_constraint = None
         reserve_soc = constraints.get("reserve_soc")
         if reserve_soc is not None:
             reserve = self._as_array(reserve_soc, self.num_buildings)
-            constraints_list.append(soc[:, H] >= reserve)
+            reserve_constraint = soc[:, H] >= reserve
+            constraints_list.append(reserve_constraint)
 
-        # Custom max charge rate
+        max_charge_constraint = None
         max_charge = constraints.get("max_charge_rate")
         if max_charge is not None:
-            constraints_list.append(charge <= max_charge)
+            max_charge_constraint = charge <= max_charge
+            constraints_list.append(max_charge_constraint)
 
-        # === Solve ===
         prob = cp.Problem(objective, constraints_list)
         solved = False
         for solver, kwargs in (
@@ -249,14 +256,36 @@ class QPController:
                 prob.solve(solver=solver, **kwargs)
             except cp.SolverError:
                 continue
-
             if prob.status in (cp.OPTIMAL, cp.OPTIMAL_INACCURATE):
                 solved = True
                 break
 
-        if solved:
-            return action.value
-        return None
+        if not solved:
+            return None
+
+        action_value = np.asarray(action.value, dtype=np.float32)
+        if not collect_diagnostics:
+            return action_value
+
+        diagnostics = {
+            "prices": np.asarray(prices, dtype=np.float32),
+            "base_load": np.asarray(aggregate_base_load, dtype=np.float32),
+            "solar": np.asarray(aggregate_solar, dtype=np.float32),
+            "net_load": np.asarray(net_load.value, dtype=np.float32),
+            "grid_import": np.asarray(grid_import.value, dtype=np.float32),
+            "soc": np.asarray(soc.value, dtype=np.float32),
+            "import_dual": np.asarray(import_constraint.dual_value, dtype=np.float32),
+        }
+        if carbon is not None:
+            diagnostics["carbon_intensity"] = np.asarray(carbon, dtype=np.float32)
+        if peak_var is not None:
+            diagnostics["peak_var"] = np.asarray([peak_var.value], dtype=np.float32)
+            diagnostics["peak_dual"] = np.asarray(peak_constraint.dual_value, dtype=np.float32)
+        if reserve_constraint is not None:
+            diagnostics["reserve_dual"] = np.asarray(reserve_constraint.dual_value, dtype=np.float32)
+        if max_charge_constraint is not None:
+            diagnostics["max_charge_dual"] = np.asarray(max_charge_constraint.dual_value, dtype=np.float32)
+        return action_value, diagnostics
 
     def solve_with_cost_vector(
         self,
@@ -265,23 +294,12 @@ class QPController:
         base_load: np.ndarray | None = None,
         solar: np.ndarray | None = None,
     ) -> np.ndarray | None:
-        """Solve QP with an explicit cost vector (for SPO+ oracle).
-
-        Args:
-            cost_vector: (horizon,) cost coefficients for the actions.
-            soc_init: Current SOC.
-            base_load: (horizon,) base load (optional, for net_load computation).
-            solar: (horizon,) solar generation (optional).
-
-        Returns:
-            Optimal action sequence (horizon,), or None if infeasible.
-        """
+        """Solve QP with an explicit cost vector (for SPO+ oracle)."""
         H = self.horizon
         actions = cp.Variable(H)
         soc = cp.Variable(H + 1)
 
         objective = cp.Minimize(cost_vector @ actions)
-
         constraints_list = [
             soc[0] == soc_init,
             soc[1:] == soc[:-1] + self.efficiency * actions / self.battery_capacity,

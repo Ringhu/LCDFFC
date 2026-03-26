@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1680" viewBox="0 0 1200 1680">
+  <rect width="1200" height="1680" fill="#f6f4ef"/>
+  <text x="600" y="72" text-anchor="middle" font-size="34" font-family="'Noto Sans SC', 'PingFang SC', sans-serif" font-weight="700" fill="#1f2937">LCDFFC 两代研究路线时间线</text>
+  <text x="600" y="108" text-anchor="middle" font-size="18" font-family="'Noto Sans SC', 'PingFang SC', sans-serif" fill="#4b5563">主题从“高层偏好怎么切”转向“预测训练是否真的服务控制 KPI”</text>
+
+  <line x1="160" y1="150" x2="160" y2="1570" stroke="#94a3b8" stroke-width="6" stroke-linecap="round"/>
+
+  <circle cx="160" cy="220" r="14" fill="#0f766e"/>
+  <rect x="220" y="150" rx="24" ry="24" width="860" height="150" fill="#d9f0ea" stroke="#0f766e" stroke-width="2"/>
+  <text x="260" y="195" font-size="25" font-family="'Noto Sans SC', 'PingFang SC', sans-serif" font-weight="700" fill="#134e4a">2026-03-18 之前：broad idea</text>
+  <text x="260" y="230" font-size="20" font-family="'Noto Sans SC', 'PingFang SC', sans-serif" fill="#1f2937">forecast+QP、uncertainty、decision-focused training、LLM router、transfer 一起推进</text>
+  <text x="260" y="262" font-size="20" font-family="'Noto Sans SC', 'PingFang SC', sans-serif" fill="#1f2937">结论：方向合理，但像路线图，不像单篇论文</text>
+
+  <circle cx="160" cy="430" r="14" fill="#2563eb"/>
+  <rect x="220" y="360" rx="24" ry="24" width="860" height="150" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/>
+  <text x="260" y="405" font-size="25" font-family="'Noto Sans SC', 'PingFang SC', sans-serif" font-weight="700" fill="#1d4ed8">2026-03-19：第一代主线锁定</text>
+  <text x="260" y="440" font-size="20" font-family="'Noto Sans SC', 'PingFang SC', sans-serif" fill="#1f2937">固定低层 forecast + QP，不重训底层，只做语言条件高层偏好路由</text>
+  <text x="260" y="472" font-size="20" font-family="'Noto Sans SC', 'PingFang SC', sans-serif" fill="#1f2937">目标：在 preference-shift 场景中动态改权重与约束</text>
+
+  <circle cx="160" cy="640" r="14" fill="#16a34a"/>
+  <rect x="220" y="560" rx="24" ry="24" width="860" height="180" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/>
+  <text x="260" y="605" font-size="25" font-family="'Noto Sans SC', 'PingFang SC', sans-serif" font-weight="700" fill="#166534">2026-03-20：第一代拿到正信号</text>
+  <text x="260" y="640" font-size="20" font-family="'Noto Sans SC', 'PingFang SC', sans-serif" fill="#1f2937">旧协议下，text_v4 的 avg_preference_score 为 0.876622</text>
+  <text x="260" y="672" font-size="20" font-family="'Noto Sans SC', 'PingFang SC', sans-serif" fill="#1f2937">best single fixed 为 fixed_reserve = 0.876931，text_v4 小幅更好</text>
+  <text x="260" y="704" font-size="20" font-family="'Noto Sans SC', 'PingFang SC', sans-serif" fill="#1f2937">fallback 还能把 reserve_gap 从 0.0822 拉回到 0，并恢复 peak</text>
+
+  <circle cx="160" cy="900" r="14" fill="#ea580c"/>
+  <rect x="220" y="810" rx="24" ry="24" width="860" height="210" fill="#ffedd5" stroke="#ea580c" stroke-width="2"/>
+  <text x="260" y="855" font-size="25" font-family="'Noto Sans SC', 'PingFang SC', sans-serif" font-weight="700" fill="#9a3412">2026-03-20 ~ 2026-03-21：第一代被更严测试收紧</text>
+  <text x="260" y="890" font-size="20" font-family="'Noto Sans SC', 'PingFang SC', sans-serif" fill="#1f2937">event-driven 协议下，fixed_peak = 1.165603 最好</text>
+  <text x="260" y="922" font-size="20" font-family="'Noto Sans SC', 'PingFang SC', sans-serif" fill="#1f2937">real llm_prompt_v1 = 1.166728，text_best = 1.171089，优势明显收缩</text>
+  <text x="260" y="954" font-size="20" font-family="'Noto Sans SC', 'PingFang SC', sans-serif" fill="#1f2937">Transformer 下 LLM 略优于 fixed，Granite 下 fixed 又明显更强</text>
+  <text x="260" y="986" font-size="20" font-family="'Noto Sans SC', 'PingFang SC', sans-serif" fill="#1f2937">结论：高层排序依赖协议和低层预测模型，不能再写成稳定主结论</text>
+
+  <circle cx="160" cy="1180" r="14" fill="#7c3aed"/>
+  <rect x="220" y="1090" rx="24" ry="24" width="860" height="210" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/>
+  <text x="260" y="1135" font-size="25" font-family="'Noto Sans SC', 'PingFang SC', sans-serif" font-weight="700" fill="#6d28d9">2026-03-21 ~ 2026-03-24：根因更清楚</text>
+  <text x="260" y="1170" font-size="20" font-family="'Noto Sans SC', 'PingFang SC', sans-serif" fill="#1f2937">Moirai2 和 TimesFM 的 zero-shot forecast 很强，但 control 不按 forecast 排名兑现</text>
+  <text x="260" y="1202" font-size="20" font-family="'Noto Sans SC', 'PingFang SC', sans-serif" fill="#1f2937">修正 future carbon 输入后，qp_carbon 仍优于非 QP controller family</text>
+  <text x="260" y="1234" font-size="20" font-family="'Noto Sans SC', 'PingFang SC', sans-serif" fill="#1f2937">同时确认部分高层主脚本之前没把 future carbon 传给控制器</text>
+  <text x="260" y="1266" font-size="20" font-family="'Noto Sans SC', 'PingFang SC', sans-serif" fill="#1f2937">结论：先把低层输入固定，再谈高层比较</text>
+
+  <circle cx="160" cy="1450" r="14" fill="#dc2626"/>
+  <rect x="220" y="1355" rx="24" ry="24" width="860" height="220" fill="#fee2e2" stroke="#dc2626" stroke-width="2"/>
+  <text x="260" y="1400" font-size="25" font-family="'Noto Sans SC', 'PingFang SC', sans-serif" font-weight="700" fill="#991b1b">2026-03-25 ~ 2026-03-26：第二代主线 = preflight-validated CSFT</text>
+  <text x="260" y="1435" font-size="20" font-family="'Noto Sans SC', 'PingFang SC', sans-serif" fill="#1f2937">raw CSFT pilot 全面输给 uniform：MSE 1.132944 → 1.190106，MAE 0.363535 → 0.393872</text>
+  <text x="260" y="1467" font-size="20" font-family="'Noto Sans SC', 'PingFang SC', sans-serif" fill="#1f2937">control 也变差：cost 31.6692 → 32.4629，peak 15.7291 → 16.3757</text>
+  <text x="260" y="1499" font-size="20" font-family="'Noto Sans SC', 'PingFang SC', sans-serif" fill="#1f2937">当前不再扩实验，而是先做两个 gate：oracle alignment + raw-label utility</text>
+  <text x="260" y="1531" font-size="20" font-family="'Noto Sans SC', 'PingFang SC', sans-serif" fill="#1f2937">只有 gate 通过，才跑一版 stabilized-CSFT：clip@q95 → log1p → normalize → one rerun</text>
+
+  <text x="600" y="1632" text-anchor="middle" font-size="20" font-family="'Noto Sans SC', 'PingFang SC', sans-serif" fill="#374151">一句话：项目已经从“高层怎么切偏好”转向“训练监督是否真的对下游控制有用”。</text>
+</svg>

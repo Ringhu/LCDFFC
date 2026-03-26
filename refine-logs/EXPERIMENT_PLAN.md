@@ -1,82 +1,77 @@
 # Experiment Plan
 
 **Problem**: 在固定 `forecast -> qp_carbon -> CityLearn` 闭环里，怎样让 forecast training 真正服务下游控制 KPI，而不只是降低平均 forecast error。
-**Method Thesis**: Raw finite-difference controller sensitivities should only be used for forecast training after passing a numerical preflight validity gate and a fixed stabilization operator.
+**Method Thesis**: After raw slot-wise CSFT fails its own utility gate, the smallest remaining controller-aware route is a controller-dual prior: a fixed horizon×channel relevance map derived from the QP structure and used as a low-entropy forecast weighting prior.
 **Date**: 2026-03-26
 
 ## Claim Map
 
 | Claim | Why It Matters | Minimum Convincing Evidence | Linked Blocks |
 |-------|-----------------|-----------------------------|---------------|
-| C1: raw controller-sensitive labels are only usable if they pass a numerical preflight gate | 如果这个 gate 不成立，后面所有 stabilized-CSFT 都没有意义 | oracle alignment 通过；raw-CSFT 在 top-decile MAE 上不比 uniform 差超过 5% | B1 |
-| C2: fixed stabilization operator can recover controller-critical fitting and early KPI signal without unacceptable aggregate degradation | 这是当前 paper 的主方法主张 | stabilized-CSFT 满足 acceptance rule：top-decile MAE 更低、overall MAE 不劣化超过 1%、`cost` 或 `carbon` 至少一个改善、`peak` 不劣化超过 1% | B2, B3 |
-| Anti-claim A1: gain only comes from arbitrary weight tuning or post-hoc metric cherry-picking | reviewer 最容易质疑这只是 recipe tuning | operator 全固定；只跑一个 rerun；用预注册 acceptance rule 判定 | B1, B2 |
-| Anti-claim A2: even softened weighting is no better than simpler control-aware heuristics | 如果 heuristic 就够了，方法贡献要降级 | stabilized-CSFT 至少不弱于 strongest simple heuristic baseline，或明确把 heuristic comparison 留到 gate 通过后再做 | B3 |
+| C1: raw slot-wise CSFT is formally falsified in the current setting | 这决定我们能不能继续合理地扩原始 CSFT 主线 | R201 PASS + R202 FAIL；oracle 对齐正确，但 raw-CSFT 在 top-decile MAE 上仍比 uniform 更差 | B1 |
+| C2: a controller-dual prior is a stronger and more defensible supervision target than raw-CSFT | 这是新的主方法主张 | controller-dual prior rerun 优于 raw-CSFT，并且至少不弱于最强简单 heuristic；同时其 prior 形状不能退化成 generic horizon mask | B2, B3 |
+| Anti-claim A1: gain only comes from a generic front-loaded heuristic | reviewer 最容易说“这不就是近端 horizon weighting” | controller-dual prior 在表征上与 manual horizon mask 显著不同，且结果上优于或明显不同于 strongest simple heuristic | B2, B3 |
+| Anti-claim A2: controller-aware weighting line is exhausted after raw-CSFT failure | 如果 pivot 后仍然不行，这整条 paper route 就该降级 | dual-prior rerun 若仍无信号，则尽早停止 controller-aware weighting 主线 | B2 |
 
 ## Paper Storyline
 - Main paper must prove:
-  - 当前 raw-CSFT 不是一个可直接扩展的方法，必须先经过 numerical preflight
-  - 通过 preflight 后，固定 stabilization operator 能把 raw sensitivities 变成可训练监督
-  - 这个监督至少能先在 controller-critical cells 上恢复正向信号，并带来早期 control KPI 改善
+  - raw slot-wise CSFT 在当前 setting 下已经被正式否掉，不能再当主路线继续扩
+  - fixed-QP controller 仍然能提供一个更低方差、更 controller-specific 的 prior
+  - 这个 controller-dual prior 比 raw-CSFT 更好，并且不退化成简单 heuristic
 - Appendix can support:
-  - operator 的 mechanistic justification
-  - label storage / horizon indexing / channel ordering 细节
-  - `ramping`、distribution stats、更多可视化
-  - controller-specificity 或 heuristic expansion（仅当主线通过 gate 后）
+  - preflight 细节与 decile table
+  - prior 与 heuristic 的相似度分析细节
+  - `ramping`、更多分布图、更多 controller-specificity 结果
+  - optional multi-seed strengthening（仅当单次 rerun 为正）
 - Experiments intentionally cut:
+  - raw-CSFT stabilized rerun
   - 多 backbone 扩展
-  - 多 seed 扩展（在 single-run gate 没过前不做）
   - RL / routing / foundation-model 对照
-  - bucketed fallback 主方法
-  - 大规模 heuristic matrix
+  - 大规模 heuristic 家族矩阵
+  - bucketed / top-K prior 家族搜索
 
 ## Experiment Blocks
 
-### Block 1: Numerical Preflight Gate
+### Block 1: Frozen Falsification Evidence — Raw-CSFT Should Not Be Scaled
 - **Claim tested**: C1
-- **Why this block exists**: 这是整条路线的 stop/go gate。没有它，stabilized-CSFT 只是继续在可疑 supervision 上加工程修补。
+- **Why this block exists**: 这块是新 pivot 的起点。没有它，paper 会显得像随意换方向，而不是从严格负结果中收敛。
 - **Dataset / split / task**:
-  - 数据：当前 `artifacts/forecast_data.npz` 对应的 chronological split
-  - split：existing test split + matched oracle slices
-  - task：验证 oracle 路径与 raw label utility
+  - 数据：当前 `artifacts/forecast_data.npz`
+  - split：existing chronological split / test artifacts
+  - task：固定并引用已经完成的 R201 / R202
 - **Compared systems**:
-  1. oracle slices vs environment-derived future truth
-  2. existing uniform checkpoint (`R103/R112` line)
-  3. existing raw-CSFT checkpoint (`R105/R113` line)
+  1. oracle slices vs env future
+  2. uniform GRU vs raw-CSFT GRU
 - **Metrics**:
-  - decisive: oracle `max_abs_error` on first 20 matched steps for `price/load/solar`
-  - decisive: top-decile MAE ratio = `MAE_raw_csft / MAE_uniform`
-  - secondary: full decile-wise MAE table
+  - decisive: oracle `max_abs_error`
+  - decisive: top-decile MAE ratio
+  - secondary: decile-wise MAE table
 - **Setup details**:
   - no retraining
-  - use current test labels `artifacts/csft_labels_qp_carbon_test.npz`
-  - top decile defined by test-label sensitivity ranking over all `(sample, horizon, channel)` cells
-  - PASS iff:
-    - `max_abs_error <= 1e-6` for each channel
-    - raw-CSFT top-decile MAE is not worse than uniform by more than 5%
+  - directly reuse `reports/csft_pilot/r201_oracle_alignment.json`
+  - directly reuse `reports/csft_pilot/r202_raw_label_utility.json`
 - **Success criterion**:
-  - preflight PASS
+  - formal conclusion is clear: oracle path is valid, raw-CSFT utility gate fails
 - **Failure interpretation**:
-  - oracle FAIL => first fix oracle/eval path, do not run stabilized-CSFT
-  - utility FAIL => raw slot-wise CSFT is not a viable route in current form; do not scale this paper line
+  - if this evidence is not accepted as frozen ground truth, then the paper lacks a rigorous reason to pivot
 - **Table / figure target**:
-  - Main Table 1 (left panel) or Figure 1: preflight PASS/FAIL summary
+  - Main Figure 1: preflight summary
   - Appendix Table A1: decile-wise MAE table
-- **Priority**: MUST-RUN
+- **Priority**: MUST-RUN (already done; now paper-facing packaging)
 
-### Block 2: Main Anchor Result — One Stabilized-CSFT Rerun
+### Block 2: Main Anchor Result — Controller-Dual Prior Rerun
 - **Claim tested**: C2
-- **Why this block exists**: 这是主方法的第一性证据。只要这一步不能给出正信号，就不值得继续做更大规模实验。
+- **Why this block exists**: 这是新方法的唯一主表。如果它不给正信号，controller-aware weighting 这条主线就该停止。
 - **Dataset / split / task**:
   - 数据：当前 CityLearn 2023 主数据路径
-  - split：same chronological train/val/test as current GRU runs
-  - task：固定 `qp_carbon` 下的 stabilized-CSFT 单次 rerun
+  - split：same chronological train/val/test as existing GRU runs
+  - task：固定 `qp_carbon` 下的 controller-dual prior 单次 rerun
 - **Compared systems**:
   1. uniform GRU baseline
   2. raw-CSFT GRU pilot
-  3. stabilized-CSFT GRU (new)
+  3. controller-dual prior GRU (new)
 - **Metrics**:
-  - decisive: top-decile MAE
+  - decisive: high-prior-cell MAE
   - decisive: overall MAE
   - decisive: `cost`, `carbon`, `peak`
   - secondary: `ramping`
@@ -84,139 +79,136 @@
   - backbone: existing GRU
   - controller: fixed `qp_carbon`
   - GPU: GPU 2 only
-  - stabilization operator fixed to:
-    - `q95_train` clipping over positive raw train sensitivities
-    - `m_train` = median over positive clipped raw train sensitivities
-    - `eps = 1e-8`
-    - `u = log1p(s_clip / (m_train + eps))`
-    - per-sample normalization
-  - loss:
-    - Huber delta = `1.0`
-    - `alpha = 0.85`
-  - seeds: 1 (this stage intentionally single-run)
+  - prior extraction:
+    - derive horizon×channel relevance from QP analytic objective coefficients and, where available, active-constraint dual information
+    - apply channel-wise normalization using either train target std or uniform-baseline per-channel MAE
+    - normalize prior to mean 1 over `(h,c)`
+  - training loss:
+    - fixed mixed Huber loss
+    - fixed `alpha`
+    - no per-sample weight variation
+  - seeds: 1
 - **Success criterion**:
-  - all four acceptance-rule conditions hold:
-    1. top-decile MAE < uniform
-    2. overall MAE no worse than uniform by >1%
-    3. at least one of `cost` or `carbon` improves
-    4. `peak` no worse than uniform by >1%
+  - controller-dual prior beats raw-CSFT on high-prior-cell MAE
+  - overall MAE is at least close to uniform
+  - at least one of `cost` / `carbon` improves vs uniform without unacceptable `peak` degradation
 - **Failure interpretation**:
-  - if acceptance rule fails, do not scale to 3 seeds or more baselines; this route remains REVISE or should be stopped
+  - if this single rerun is weak, stop controller-aware weighting as the main paper route rather than scaling it
 - **Table / figure target**:
-  - Main Table 1 (right panel): uniform vs raw-CSFT vs stabilized-CSFT
+  - Main Table 1: uniform vs raw-CSFT vs controller-dual prior
 - **Priority**: MUST-RUN
 
-### Block 3: Novelty / Simplicity Check — Strongest Simple Heuristic vs Stabilized-CSFT
-- **Claim tested**: C2 + Anti-claim A2
-- **Why this block exists**: 如果 stabilized-CSFT 过 gate，reviewer 下一句就是“是不是简单 heuristic weighting 就够了？”
+### Block 3: Novelty / Simplicity Check — Dual Prior vs Strongest Simple Heuristic
+- **Claim tested**: C2 + Anti-claim A1
+- **Why this block exists**: reviewer 会直接问“你这个是不是只是一个更花哨的 front-loaded horizon weighting”。
 - **Dataset / split / task**:
-  - 与 Block 2 相同
-  - 仅在 Block 2 成功后运行
+  - same as Block 2
+  - only after the controller-dual prior rerun is available
 - **Compared systems**:
-  1. uniform
-  2. strongest simple heuristic baseline（优先 `event-window weighting`；若已有实现更成熟则用 `manual horizon weighting`）
-  3. stabilized-CSFT
+  1. strongest simple heuristic baseline（只保留一个，优先 `manual_horizon` 或更成熟的 `event-window`）
+  2. controller-dual prior GRU
 - **Metrics**:
-  - decisive: top-decile MAE, overall MAE
+  - decisive: high-prior-cell MAE
+  - decisive: overall MAE
   - decisive: `cost`, `carbon`, `peak`
+  - characterization: similarity between controller-dual prior and heuristic mask（correlation / relative entropy / overlap）
 - **Setup details**:
-  - heuristic baseline 只保留一个最强简单家族，避免 baseline list 过长
-  - same backbone, same budget, same controller
-  - seeds: 1 initially; 3 only if stabilized-CSFT already clearly positive
+  - same backbone, same controller, same train budget
+  - no extra model family
+  - seeds: 1 initially
 - **Success criterion**:
-  - stabilized-CSFT 至少不弱于 strongest simple heuristic on primary KPIs and top-decile MAE
+  - controller-dual prior is either better than the strongest heuristic baseline, or clearly different in shape while giving competitive KPI gains
 - **Failure interpretation**:
-  - if heuristic ties or wins, paper claim must weaken to “simple control-aware weighting may suffice”
+  - if the prior is highly correlated with the heuristic and not better in results, then claim weakens to controller-justified heuristic weighting
 - **Table / figure target**:
-  - Main Table 2 or appendix if effect is weak
-- **Priority**: MUST-RUN only if Block 2 passes, otherwise CUT
+  - Main Figure 2: prior vs heuristic characterization
+  - Main / Appendix Table 2: heuristic vs dual-prior comparison
+- **Priority**: MUST-RUN
 
 ### Block 4: Failure Analysis / Mechanism Figure
 - **Claim tested**: supports C1/C2
-- **Why this block exists**: 即使结果是负的，也需要一张机制图把结论讲清楚。
+- **Why this block exists**: 这块负责把“为什么 raw-CSFT 死了，而 dual prior 可能还活着”讲清楚。
 - **Dataset / split / task**:
   - test split
-  - preflight outputs + all available model predictions
+  - preflight artifacts + all model predictions + extracted prior
 - **Compared systems**:
   1. uniform
   2. raw-CSFT
-  3. stabilized-CSFT (if available)
+  3. controller-dual prior
 - **Metrics**:
-  - full decile-wise MAE curve
-  - sensitivity distribution before/after operator
-  - acceptance-rule dashboard
+  - decile-wise MAE curves
+  - high-prior-cell vs low-prior-cell MAE
+  - prior heatmap over horizon×channel
 - **Setup details**:
-  - no extra training
-  - can be generated after Block 1 and Block 2
+  - no additional training beyond Block 2
 - **Success criterion**:
-  - mechanism figure clearly shows whether stabilization changed the supervision distribution and whether gains concentrated on critical cells
+  - mechanism figure clearly shows that raw-CSFT is noisy/ineffective while the dual prior is lower-variance and more interpretable
 - **Failure interpretation**:
-  - if the figure remains flat or inconsistent, the story is not yet mechanism-level
+  - if this figure is not convincing, the method may still read as a local patch
 - **Table / figure target**:
-  - Figure 2: decile-wise MAE curve
-  - Figure 3: raw vs stabilized sensitivity distribution / operator effect
+  - Figure 3: decile/high-prior-cell MAE comparison
+  - Figure 4: controller-dual prior heatmap
 - **Priority**: MUST-RUN
 
-### Block 5: Controller-Specificity Check (Conditional)
+### Block 5: Conditional Strengthening — Multi-seed or Controller-Specificity Check
 - **Claim tested**: optional strengthening of C2
-- **Why this block exists**: 只有主线已经有正信号时，才值得证明 signal 真是 controller-specific，而不是 generic importance map。
+- **Why this block exists**: 只有当 controller-dual prior 单次 rerun 是正的，才值得加更强 defense。
 - **Dataset / split / task**:
   - same as Block 2
-  - only if Block 2 passes convincingly
+  - conditional on Block 2 positive signal
 - **Compared systems**:
-  1. stabilized-CSFT with `qp_carbon` labels
-  2. stabilized-CSFT with mismatched labels (e.g. `qp_current`)
+  1. controller-dual prior (3 seeds) or
+  2. matched vs altered controller-derived prior
 - **Metrics**:
-  - top-decile MAE
-  - `cost`, `carbon`, `peak`
+  - same primary KPI set
 - **Setup details**:
-  - same operator, same backbone, same budget; only label source changes
-  - seeds: 1 initially
+  - run only one strengthening family, not both, unless the main result is very strong
 - **Success criterion**:
-  - matched labels outperform mismatched labels on primary KPI story
+  - positive direction remains stable or becomes more clearly controller-specific
 - **Failure interpretation**:
-  - if no gap appears, claim should weaken from controller-sensitive to generic control-aware weighting
+  - if strengthening fails, keep the claim narrow and avoid overselling
 - **Table / figure target**:
-  - Appendix first, promote to main only if very clean
+  - Appendix first, main only if very clean
 - **Priority**: NICE-TO-HAVE
 
 ## Run Order and Milestones
 
 | Milestone | Goal | Runs | Decision Gate | Cost | Risk |
 |-----------|------|------|---------------|------|------|
-| M0 | Verify numerical preflight gate | R201 oracle alignment, R202 raw-label utility | If either fails, stop this route and do not launch stabilized rerun | Very low | Oracle path or label ranking may already kill the method |
-| M1 | Run main stabilized rerun | R203 stabilized-CSFT train+eval | Continue only if acceptance rule passes | Low | Method may still be too weak even after stabilization |
-| M2 | Defend against strongest simple alternative | R204 strongest heuristic baseline (conditional) | Only run if R203 passes | Low to medium | Heuristic may explain away the gain |
-| M3 | Produce mechanism figures and paper tables | R205 plots/tables package | Required for paper interpretation regardless of positive/negative outcome | Low | Story may remain unclear if effects are noisy |
-| M4 | Optional strengthening | R206 controller-specificity check | Only if R203 is clearly positive | Medium | Extra compute without affecting main conclusion |
+| M0 | Freeze falsification evidence | P201 package R201/R202 into paper-facing summary | If the frozen evidence is not cleanly reported, pivot lacks foundation | Very low | Users/reviewers may still think pivot is arbitrary |
+| M1 | Extract controller-dual prior | P202 prior extraction + sanity plots | Continue only if prior is not trivially identical to a simple horizon mask | Low CPU | Prior may collapse into heuristic shape |
+| M2 | Run main pivot method | P203 controller-dual prior GRU rerun | Continue only if raw-CSFT is beaten and early KPI signal appears | Low GPU | New route may still be too weak |
+| M3 | Defend novelty against heuristic | P204 strongest heuristic rerun/compare | If heuristic dominates, weaken or stop the claim | Low to medium | Claim collapses to heuristic weighting |
+| M4 | Mechanism packaging | P205 figures/tables package | Required for paper interpretation regardless of positive/negative result | Low | Story may remain patch-like |
+| M5 | Optional strengthening | P206 multi-seed or controller-specificity | Only if P203 is clearly positive | Medium | Additional compute with limited upside |
 
 ## Compute and Data Budget
 - **Total estimated GPU-hours**:
-  - M0: negligible GPU, mostly analysis
-  - M1: low (one GRU rerun)
-  - M2: low to medium, conditional
-  - M3: negligible GPU
-  - Total must-run before scale-up: low budget
+  - M0–M1: negligible GPU
+  - M2: low (one GRU rerun)
+  - M3: low to medium (one strongest heuristic family only)
+  - M4: negligible GPU
+  - total must-run budget remains low
 - **Data preparation needs**:
-  - reuse current chronological split
-  - reuse existing checkpoint and label artifacts
-  - ensure oracle slice extraction and env-future extraction are deterministic and matched by episode/time index
+  - reuse existing split and checkpoints
+  - add one prior-extraction script from `qp_controller.py`
+  - save prior matrix and its metadata for reproducibility
 - **Human evaluation needs**:
   - none
 - **Biggest bottleneck**:
-  - not compute; the main bottleneck is whether preflight passes and whether stabilized weighting yields any real signal
+  - not compute; the main bottleneck is whether the controller-dual prior is genuinely controller-specific rather than just another horizon heuristic
 
 ## Risks and Mitigations
-- **Risk**: oracle alignment bug invalidates both oracle comparison and label interpretation
-  - **Mitigation**: make oracle alignment the very first run and block all later runs on it
-- **Risk**: raw label utility test fails immediately
-  - **Mitigation**: treat that as a useful falsification result and pivot early instead of scaling CSFT
-- **Risk**: stabilized operator improves critical cells but not control KPIs
-  - **Mitigation**: use the pre-registered acceptance rule; if it fails, stop and do not expand seeds/backbones
-- **Risk**: reviewer says the gain is just heuristic weighting
-  - **Mitigation**: run only the strongest simple heuristic baseline after the main rerun passes
-- **Risk**: pseudo-novelty criticism remains
-  - **Mitigation**: in paper text, explicitly justify why clipping + `log1p` + per-sample normalization is a scale-control mechanism rather than arbitrary recipe tuning
+- **Risk**: controller-dual prior ends up highly correlated with manual horizon weighting
+  - **Mitigation**: explicitly characterize prior-vs-heuristic similarity and weaken the claim if necessary
+- **Risk**: dual prior beats raw-CSFT but still does not improve control KPIs
+  - **Mitigation**: stop controller-aware weighting as a main route; keep it as a negative-result analysis if useful
+- **Risk**: analytic dual/gradient extraction is harder than expected from current controller code
+  - **Mitigation**: use the simplest controller-consistent analytic surrogate available from the QP objective first, before full dual instrumentation
+- **Risk**: reviewer sees the pivot as arbitrary method hopping
+  - **Mitigation**: make Block 1 a frozen falsification story so the pivot is causally justified by evidence
+- **Risk**: too many comparison branches dilute the story
+  - **Mitigation**: keep only one heuristic family and one conditional strengthening block
 
 ## Final Checklist
 - [ ] Main paper tables are covered

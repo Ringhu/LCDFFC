@@ -2,12 +2,14 @@
 
 | Run ID | Milestone | Purpose | System / Variant | Split | Metrics | Priority | Status | Notes |
 |--------|-----------|---------|------------------|-------|---------|----------|--------|-------|
-| R201 | M0 | preflight | oracle alignment check (`oracle slices` vs `env future`) | test | max_abs_error on `price/load/solar` | MUST | DONE | PASS: all three channels = 0.0, threshold = 1e-6 |
-| R202 | M0 | preflight | raw-label utility check (`uniform` vs `raw-CSFT`) | test | top-decile MAE ratio | MUST | DONE | FAIL: ratio = 1.0546 > 1.05; rank-based top decile used (440 / 4392 cells) |
-| R203 | M1 | main method | GRU + stabilized-CSFT (`clip@q95 -> log1p -> normalize`, `alpha=0.85`, Huber=1.0) + `qp_carbon` | train/val/test | top-decile MAE / overall MAE / cost / carbon / peak | MUST | BLOCKED | Not launched because preflight requires R201 and R202 both PASS; R202 failed |
-| R204 | M2 | strongest simple baseline | GRU + strongest simple heuristic weighting + `qp_carbon` | train/val/test | top-decile MAE / overall MAE / cost / carbon / peak | MUST | TODO | Launch only if R203 passes acceptance rule |
-| R205 | M3 | mechanism package | decile curve + raw vs stabilized weight distribution + acceptance dashboard | test | figures/tables | MUST | TODO | Needed whether R203 is positive or negative |
-| R206 | M4 | controller specificity | stabilized-CSFT with mismatched controller labels | train/val/test | top-decile MAE / cost / carbon / peak | NICE | TODO | Only if R203 is clearly positive |
-| H101 | history | existing baseline | GRU + uniform loss + `qp_carbon` | val/test | MAE / MSE / control KPIs | CONTEXT | DONE | Existing references: R103 + R112 |
-| H102 | history | existing pilot | GRU + raw-CSFT + `qp_carbon` | val/test | MAE / MSE / control KPIs | CONTEXT | DONE | Existing references: R105 + R113 |
-| H103 | history | existing upper bound | oracle forecast + `qp_carbon` | test | cost / carbon / peak / ramping | CONTEXT | DONE | Existing reference: R104 |
+| P201 | M0 | frozen evidence | package R201/R202 preflight conclusion | test | oracle alignment / top-decile MAE ratio | MUST | TODO | Formalize: oracle PASS, raw-CSFT FAIL |
+| P202 | M1 | prior extraction | extract controller-dual prior `G(h,c)` from fixed `qp_carbon` | train | prior heatmap / heuristic similarity | MUST | TODO | Continue only if prior is not trivially equivalent to a simple horizon mask |
+| P203 | M2 | main pivot method | GRU + controller-dual prior + `qp_carbon` | train/val/test | high-prior-cell MAE / overall MAE / cost / carbon / peak | MUST | TODO | New anchor run replacing blocked R203 |
+| P204 | M3 | strongest simple alternative | GRU + strongest heuristic baseline + `qp_carbon` | train/val/test | high-prior-cell MAE / overall MAE / cost / carbon / peak | MUST | TODO | Compare only one strongest heuristic family |
+| P205 | M4 | mechanism package | decile/high-prior-cell curves + prior heatmap + heuristic similarity | test | figures/tables | MUST | TODO | Needed whether pivot is positive or negative |
+| P206 | M5 | optional strengthening | controller-dual prior multi-seed or controller-specificity check | train/val/test | same primary KPIs | NICE | TODO | Only if P203 is clearly positive |
+| H201 | history | frozen falsification | R201 oracle alignment | test | max_abs_error | CONTEXT | DONE | PASS: all channels 0.0 |
+| H202 | history | frozen falsification | R202 raw-label utility | test | top-decile MAE ratio | CONTEXT | DONE | FAIL: 1.0546 > 1.05 |
+| H203 | history | existing baseline | GRU + uniform + `qp_carbon` | val/test | MAE / MSE / control KPIs | CONTEXT | DONE | Existing references: R103 + R112 |
+| H204 | history | failed route | GRU + raw-CSFT + `qp_carbon` | val/test | MAE / MSE / control KPIs | CONTEXT | DONE | Existing references: R105 + R113 |
+| H205 | history | blocked run | stabilized-CSFT R203 | train/val/test | — | CONTEXT | BLOCKED | Not launched because raw-CSFT preflight failed |

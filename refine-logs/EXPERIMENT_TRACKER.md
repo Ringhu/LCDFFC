@@ -2,9 +2,9 @@
 
 | Run ID | Milestone | Purpose | System / Variant | Split | Metrics | Priority | Status | Notes |
 |--------|-----------|---------|------------------|-------|---------|----------|--------|-------|
-| R201 | M0 | preflight | oracle alignment check (`oracle slices` vs `env future`) | test | max_abs_error on `price/load/solar` | MUST | TODO | PASS iff each channel `<= 1e-6` over first 20 matched steps |
-| R202 | M0 | preflight | raw-label utility check (`uniform` vs `raw-CSFT`) | test | top-decile MAE ratio | MUST | TODO | PASS iff raw-CSFT top-decile MAE is not worse than uniform by >5% |
-| R203 | M1 | main method | GRU + stabilized-CSFT (`clip@q95 -> log1p -> normalize`, `alpha=0.85`, Huber=1.0) + `qp_carbon` | train/val/test | top-decile MAE / overall MAE / cost / carbon / peak | MUST | TODO | Launch only if R201 and R202 both PASS |
+| R201 | M0 | preflight | oracle alignment check (`oracle slices` vs `env future`) | test | max_abs_error on `price/load/solar` | MUST | DONE | PASS: all three channels = 0.0, threshold = 1e-6 |
+| R202 | M0 | preflight | raw-label utility check (`uniform` vs `raw-CSFT`) | test | top-decile MAE ratio | MUST | DONE | FAIL: ratio = 1.0546 > 1.05; rank-based top decile used (440 / 4392 cells) |
+| R203 | M1 | main method | GRU + stabilized-CSFT (`clip@q95 -> log1p -> normalize`, `alpha=0.85`, Huber=1.0) + `qp_carbon` | train/val/test | top-decile MAE / overall MAE / cost / carbon / peak | MUST | BLOCKED | Not launched because preflight requires R201 and R202 both PASS; R202 failed |
 | R204 | M2 | strongest simple baseline | GRU + strongest simple heuristic weighting + `qp_carbon` | train/val/test | top-decile MAE / overall MAE / cost / carbon / peak | MUST | TODO | Launch only if R203 passes acceptance rule |
 | R205 | M3 | mechanism package | decile curve + raw vs stabilized weight distribution + acceptance dashboard | test | figures/tables | MUST | TODO | Needed whether R203 is positive or negative |
 | R206 | M4 | controller specificity | stabilized-CSFT with mismatched controller labels | train/val/test | top-decile MAE / cost / carbon / peak | NICE | TODO | Only if R203 is clearly positive |

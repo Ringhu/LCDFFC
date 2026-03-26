@@ -117,7 +117,7 @@ def generate_labels(
     controller_type: str,
     max_samples: int | None,
     clip_quantile: float,
-) -> tuple[np.ndarray, np.ndarray, dict]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
     history_len = int(forecast_config["model"].get("history_len", 24))
     horizon = int(forecast_config["model"]["horizon"])
     dataset = CityLearnDataset.from_file(
@@ -188,7 +188,7 @@ def generate_labels(
         "normalized_max": float(np.max(normalized)),
         "clip_quantile": float(clip_quantile),
     }
-    return normalized, future_start_indices, metadata
+    return sensitivity, normalized, future_start_indices, metadata
 
 
 def main() -> None:
@@ -207,7 +207,7 @@ def main() -> None:
 
     forecast_config = load_config(args.forecast_config)
     controller_config = load_config(args.controller_config)
-    labels, future_start_indices, metadata = generate_labels(
+    raw_labels, labels, future_start_indices, metadata = generate_labels(
         data_path=args.data_path,
         schema=args.schema,
         forecast_config=forecast_config,
@@ -220,7 +220,12 @@ def main() -> None:
 
     output_path = Path(args.output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    np.savez(output_path, sensitivity=labels, future_start_indices=future_start_indices)
+    np.savez(
+        output_path,
+        raw_sensitivity=raw_labels.astype(np.float32),
+        sensitivity=labels.astype(np.float32),
+        future_start_indices=future_start_indices,
+    )
 
     metadata_path = Path(args.metadata_path) if args.metadata_path else output_path.with_suffix(".json")
     metadata_path.write_text(json.dumps(metadata, indent=2))

@@ -16,9 +16,9 @@ external_scenarios:
 
 # Models to sweep
 models:
-  - name: rbc
+  - name: myopic_qp
     forecast_mode: myopic
-    tag: rbc_baseline
+    tag: myopic_qp
     forecast_config: configs/forecast.yaml
     controller_config: configs/controller.yaml
 
@@ -47,7 +47,7 @@ models:
   #   controller_config: configs/controller.yaml
 
 # Reference model for CAVS computation (relative improvement baseline)
-reference_model: rbc
+reference_model: myopic_qp
 
 # CAVS weights (match controller default_weights)
 cavs_weights:

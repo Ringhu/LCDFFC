@@ -15,7 +15,7 @@
 
 1. **实现 `prepare_citylearn.py`**：
    - 从 CityLearn Challenge 2023 Phase 1 的 schema.json 加载环境
-   - 运行一个 episode（使用 RBC 或 no-action），记录所有观测数据
+   - 运行一个 episode（使用 zero-action 或默认 building behavior），记录所有观测数据
    - 提取关键特征：non_shiftable_load, solar_generation, electricity_pricing, carbon_intensity, outdoor_dry_bulb_temperature, hour, day_type
    - 保存为 CSV 和 NPZ 格式到 `artifacts/`
    - 输出 `artifacts/data_summary.json`，包含特征维度、时间范围、基本统计

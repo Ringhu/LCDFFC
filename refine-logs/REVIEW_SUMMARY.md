@@ -18,7 +18,7 @@
 2. LLM/agent claim overstated — most router variants are hand-built profile selectors
 3. CSFT does not improve control over uniform training
 4. Experimental scope too narrow: 1 schema, 1 seed, 1 controller family
-5. Baselines weak or mislabeled (RBC = zero-action, not a real rule-based controller)
+5. Baselines weak or mislabeled (zero-action had been treated as a rule-based-control baseline, but it is not one)
 6. Strongest result (FM dominance) is unrelated to proposed method
 7. Controller-path issues create concern about comparison cleanliness
 
@@ -33,7 +33,7 @@ Converge to forecast-control misalignment as the single thesis. The strongest em
 | LLM agent claim overstated | Dropped from main claims; optional extension only |
 | CSFT not validated | Archived; sensitivity reused as CAVS input |
 | Narrow experimental scope | Plan expanded to 5 scenarios, 3 seeds, 4+ model families |
-| Weak baselines | Plan includes proper RBC baseline and oracle variants |
+| Weak baselines | Plan now distinguishes zero-action, myopic-QP, and oracle variants; a proper rule-based controller remains separate |
 | FM dominance unrelated to method | FM results now support misalignment claim (zero-shot FM beats trained on control despite worse forecast) |
 | Controller-path concerns | E01 locks corrected stack before any claims |
 

@@ -2,7 +2,7 @@
 schema: "citylearn_challenge_2023_phase_1"
 
 baselines:
-  - "rbc"
+  - "zero_action"
 
 methods:
   - "forecast_qp"

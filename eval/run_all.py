@@ -58,18 +58,29 @@ def compare(reports_dir: str, output_dir: str | None = None):
     # Save CSV
     df.to_csv(out / "comparison_table.csv", index=False)
 
-    # Compute relative improvement over RBC (first method is typically RBC)
-    rbc_row = df[df["method"].str.contains("rbc", case=False)]
-    if not rbc_row.empty:
-        rbc_vals = rbc_row.iloc[0]
-        print("\n=== Relative to RBC (%) ===")
+    # Compute relative improvement over the default baseline.
+    baseline_candidates = ["zero_action", "myopic_qp"]
+    baseline_row = pd.DataFrame()
+    baseline_name = None
+    for candidate in baseline_candidates:
+        candidate_row = df[df["method"].str.contains(candidate, case=False)]
+        if not candidate_row.empty:
+            baseline_row = candidate_row
+            baseline_name = candidate
+            break
+
+    if not baseline_row.empty:
+        baseline_vals = baseline_row.iloc[0]
+        label = baseline_name.replace("_", "-") if baseline_name else "baseline"
+        print(f"\n=== Relative to {label} (%) ===")
         for _, row in df.iterrows():
-            if "rbc" in row["method"].lower():
+            method_name = row["method"].lower()
+            if any(candidate in method_name for candidate in baseline_candidates):
                 continue
             improvements = []
             for m in metrics:
-                if rbc_vals[m] != 0:
-                    pct = (rbc_vals[m] - row[m]) / abs(rbc_vals[m]) * 100
+                if baseline_vals[m] != 0:
+                    pct = (baseline_vals[m] - row[m]) / abs(baseline_vals[m]) * 100
                     improvements.append(f"{m}: {pct:+.2f}%")
                 else:
                     improvements.append(f"{m}: N/A")

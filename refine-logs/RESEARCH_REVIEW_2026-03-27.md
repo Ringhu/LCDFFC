@@ -204,7 +204,7 @@ Pin environment version: CityLearn v2.1b12 (2023 challenge version).
 - LLM/agent claim weak (mostly hand-built routing)
 - CSFT doesn't improve control over uniform
 - Experimental scope too narrow (1 schema, 1 seed)
-- Baselines weak or mislabeled (RBC = zero-action)
+- Baselines weak or mislabeled (zero-action had been labeled as a rule-based-control baseline)
 - Strongest result (FM dominance) unrelated to proposed method
 - Controller-path issues create concern about comparison cleanliness
 

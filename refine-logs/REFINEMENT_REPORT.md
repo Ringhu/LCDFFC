@@ -37,4 +37,4 @@
 - Added CAVS as constructive method
 - Expanded experimental scope from 1 scenario to 5+3 scenarios
 - Added multi-seed requirement (3 seeds)
-- Added proper baseline requirements (real RBC, oracle variants)
+- Added explicit baseline separation (zero-action, myopic-QP, oracle variants, with any real rule-based controller treated separately)

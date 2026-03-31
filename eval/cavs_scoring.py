@@ -18,7 +18,7 @@ def compute_cavs(
     ref_kpis: dict[str, float],
     weights: dict[str, float] | None = None,
 ) -> float:
-    """Weighted relative improvement over reference (e.g. RBC) KPIs.
+    """Weighted relative improvement over reference KPIs.
 
     CAVS(model) = sum_k w_k * (ref_k - model_k) / |ref_k|
 
@@ -66,7 +66,7 @@ def rank_models_by_cavs(
 
     Args:
         model_results: {model_name: {kpi_name: value}}
-        ref_kpis: reference KPIs (e.g. from RBC baseline)
+        ref_kpis: reference KPIs (e.g. from a myopic-QP baseline)
         weights: KPI weights for CAVS computation
 
     Returns:

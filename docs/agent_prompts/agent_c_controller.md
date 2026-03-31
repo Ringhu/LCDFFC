@@ -69,4 +69,4 @@ def solve_with_perturbed_cost(self, cost_vector: np.ndarray, ...) -> np.ndarray:
 ## 止损点
 
 - cvxpy 求解不稳定 → 放松约束、增大正则项、检查问题凸性
-- QP 不如 RBC → 调整权重、检查预测质量
+- QP 不如 zero-action 或显式 rule-based baseline → 调整权重、检查预测质量

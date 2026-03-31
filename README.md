@@ -69,7 +69,9 @@ CityLearn observation
   -> CityLearn env
 ```
 
-`eval/run_rbc.py` 当前应理解为 zero-action / default-building-behavior baseline runner，不是仓库里单独实现的一套 RBC policy。
+`eval/run_zero_action.py` 当前是 zero-action / default-building-behavior baseline runner，不是仓库里单独实现的一套 rule-based controller。
+
+`configs/cavs.yaml` 里的 `myopic_qp` 指的是 `forecast_mode=myopic` 的 `QP` baseline，也不是 rule-based controller。
 
 ## 快速开始
 
@@ -89,7 +91,7 @@ python scripts/train_forecaster.py \
   --device cpu
 
 # 4. 运行 zero-action baseline
-python eval/run_rbc.py \
+python eval/run_zero_action.py \
   --schema citylearn_challenge_2023_phase_1 \
   --output_dir reports/
 

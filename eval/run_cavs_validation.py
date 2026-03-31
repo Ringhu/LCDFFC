@@ -87,7 +87,7 @@ def run_sweep(config: dict, dry_run: bool = False) -> dict:
     scenarios = config["scenarios"]
     device = config.get("device", "cpu")
     output_base = config.get("output_dir", "reports/cavs")
-    ref_model = config.get("reference_model", "rbc")
+    ref_model = config.get("reference_model", "myopic_qp")
 
     all_results = {}
 

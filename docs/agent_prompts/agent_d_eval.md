@@ -7,7 +7,7 @@
 ## 负责文件
 
 - `eval/__init__.py`
-- `eval/run_rbc.py`
+- `eval/run_zero_action.py`
 - `eval/run_controller.py`
 - `eval/run_all.py`
 - `eval/metrics.py`
@@ -15,8 +15,8 @@
 
 ## 目标
 
-1. **实现 `run_rbc.py`**：
-   - 使用 CityLearn 内置 RBC 控制器跑完整 episode
+1. **实现 `run_zero_action.py`**：
+   - 使用 zero-action battery baseline 跑完整 episode
    - 记录每步的 observation、action、reward
    - 计算并保存 KPI（cost, carbon, peak, ramping）
 
@@ -62,7 +62,7 @@ kpis = compute_all_kpis(...)
 
 ```
 reports/
-├── rbc_kpis.json
+├── zero_action_kpis.json
 ├── forecast_qp_kpis.json
 ├── comparison_table.csv
 └── comparison_plot.png

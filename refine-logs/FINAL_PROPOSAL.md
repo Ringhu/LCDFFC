@@ -1,196 +1,114 @@
-# Research Proposal: Algorithmic Preflight-Validated CSFT
+# Research Proposal: Forecast-Control Misalignment and Control-Aware Model Selection
 
 ## Problem Anchor
-- Bottom-line problem:
-  Build a publishable method for exogenous time-series-driven control where forecast training improves downstream control KPIs, not just average forecast error.
-- Must-solve bottleneck:
-  In forecast-then-control pipelines, the controller only cares about a small subset of future windows and channels, but the current raw cell-wise CSFT labels appear too sharp, too noisy, or misaligned to provide useful supervision. The current pilot suggests that naive controller-sensitive weighting can hurt both forecasting and control.
-- Non-goals:
-  Not scaling to more seeds/backbones yet, not introducing a new controller, not switching to end-to-end RL, not making language routing part of the main story, and not claiming a final paper-ready method before pilot failure is explained.
-- Constraints:
-  Start from the current CityLearn + GRU + fixed `qp_carbon` stack, use the existing chronological split and artifacts, keep compute modest, use GPU 2 only for training/inference, and prefer diagnostics that reuse existing checkpoints before new full reruns.
-- Success condition:
-  After a small diagnostic-and-refinement loop, either (a) a softened controller-sensitive training objective shows better error on controller-critical cells and at least early positive KPI signal over uniform training, or (b) we can confidently falsify the current raw-label route and pivot without wasting more compute.
+
+- Bottom-line problem: Average forecast metrics (MSE/MAE) are unreliable proxies for downstream control quality in forecast-then-control systems
+- Must-solve bottleneck: Model selection by forecast accuracy can pick the wrong model for control
+- Non-goals: Not proposing a new forecasting architecture; not claiming LLM routing is the main contribution
+- Constraints: CityLearn 2023, single GPU, ~100 GPU-hours budget
+- Success condition: CAVS selects models that produce better control KPIs than MSE/MAE selection
 
 ## Technical Gap
-The pilot failure implies that raw controller sensitivity is not yet a valid training signal. The actual method question is therefore:
 
-> Can controller-derived sensitivity be converted into a stable, trainable supervision signal by a fixed validation-and-stabilization algorithm?
+Forecast-then-control is the dominant paradigm in building energy management: train a forecaster, freeze it, feed predictions to a downstream controller. Model selection universally uses average forecast accuracy (MSE or MAE on held-out windows).
 
-The answer must be algorithmic, not narrative. So the proposal is reduced to one gate and one operator.
+Evidence from our existing experiments shows this is unreliable:
+
+1. GRU wins forecast MSE but loses to zero-shot foundation models (Moirai2, TimesFM2.5) on control KPIs (cost, carbon)
+2. Replay-prior CSFT improves forecast MAE (0.282 vs 0.364) but slightly worsens control KPIs vs uniform training
+3. Input-oracle (perfect future knowledge) does not yield the best control outcome either
+4. Foundation models achieve ~8% cost improvement and ~7% carbon improvement over best trained model, despite higher forecast error on some channels
+
+The root cause: the controller is a QP that weights channels and horizons non-uniformly. Errors on price-sensitive hours matter more than errors on flat periods. Average metrics treat all errors equally.
+
+The predict-then-optimize literature (NeurIPS 2024 Directional Gradients, AAAI 2025 DFF) recognizes this gap but focuses on end-to-end training. We address the simpler, more practical question: can we at least *select* the right model without retraining?
 
 ## Method Thesis
-- One-sentence thesis:
-  Raw finite-difference controller sensitivities should only be used for forecast training after passing a numerical preflight validity gate and a fixed stabilization operator.
-- Why this is the smallest adequate intervention:
-  Nothing in inference changes; only the training-side supervision is repaired.
-- Why this route is timely in the foundation-model era:
-  The current failure is supervision-limited, not capacity-limited.
+
+- One-sentence thesis: Controller-aware validation score (CAVS) is a better model selection criterion than forecast accuracy for downstream control
+- Why smallest adequate intervention: CAVS is just a scoring function applied post-hoc to existing model outputs — no new model architecture, no retraining, no end-to-end gradient
+- Why timely: predict-then-optimize is an active frontier; model selection is the lowest-cost entry point that practitioners can adopt immediately
 
 ## Contribution Focus
-- Dominant contribution:
-  A fully specified algorithm that decides whether raw controller-sensitive labels are valid enough to use, and if so, transforms them into stabilized mixed-loss weights.
-- Optional supporting contribution:
-  None in the main claim.
-- Explicit non-contributions:
-  No controller redesign, no new backbone, no RL, no routing, no search over multiple stabilization recipes.
+
+- Dominant contribution: CAVS metric + systematic diagnosis of forecast-control misalignment across multiple scenarios, seeds, and model families
+- Supporting contribution: Decision-focused fine-tuning (CSFT variant) for trainable backbones, using CAVS-derived sensitivity as training signal
+- Explicit non-contributions: LLM routing (optional extension only, not part of main claims)
 
 ## Proposed Method
-### Complexity Budget
-- Frozen / reused backbone:
-  Current GRU forecaster, current CityLearn data path, chronological split, fixed `qp_carbon` controller, and existing uniform/raw-CSFT checkpoints.
-- New trainable components:
-  None.
-- Tempting additions intentionally not used:
-  alternative transforms, smoothing variants, bucketed fallback, backbone/controller scaling.
 
-### System Overview
-```text
-raw finite-difference sensitivity labels
-  -> numerical preflight gate (PASS/FAIL)
-  -> fixed stabilization operator
-  -> mixed weighted Huber loss
-  -> one stabilized-CSFT rerun
+### CAVS Definition
+
+CAVS scores a forecaster by weighting its errors according to controller sensitivity:
+
+```
+CAVS(f) = mean_i mean_{h,c} [ s(h,c) * |ŷ_f(i,h,c) - y(i,h,c)| ]
 ```
 
-### Core Mechanism
-- Input / output:
-  Same forecasting input/output as the current GRU setup.
+where `s(h,c)` is the controller sensitivity at horizon `h` and channel `c`.
 
-- Step 1: Numerical preflight gate
-  Given existing uniform/raw-CSFT checkpoints and current artifacts, compute two checks:
+**Version 1 — CAVS-global (fast):** Reuse a pre-computed sensitivity map `G(h,c)` from perturbation analysis on oracle forecasts:
 
-  **(A) Oracle alignment test**
-  - Compare oracle slices and environment-derived future `price/load/solar` on the first 20 matched steps.
-  - Pass criterion:
-    `max_abs_error <= 1e-6` for each of the three channels.
+```
+CAVS-global(f) = mean_i mean_{h,c} [ G(h,c) * |ŷ_f(i,h,c) - y(i,h,c)| ]
+```
 
-  **(B) Raw-label utility test**
-  - Use current test labels to rank all forecast cells by sensitivity.
-  - Compute top-decile MAE for uniform and raw-CSFT.
-  - Pass criterion:
-    raw-CSFT top-decile MAE is **not worse than uniform by more than 5%**.
+`G(h,c)` is computed once by perturbing each (channel, horizon) cell of the oracle forecast and measuring KPI change through the QP.
 
-  Preflight returns a single boolean:
-  - PASS only if both (A) and (B) pass.
-  - Otherwise FAIL and stop this method route.
+**Version 2 — CAVS-local (stronger):** Per-window perturbation sensitivity:
 
-- Step 2: Fixed stabilization operator
-  If preflight passes, compute weights as follows.
+```
+s_i(h,c) = |J(F_i + δe_{hc}) - J(F_i - δe_{hc})| / (2δ)
+```
 
-  Let `q95_train` be the 95th percentile over all positive raw train sensitivities.
-  Let `m_train` be the median over all positive clipped raw train sensitivities.
-  Let `eps = 1e-8`.
+where `J` is the QP objective value and `e_{hc}` is the unit perturbation at position (h,c).
 
-  For each raw sensitivity `s_(t,h,c)`:
-  1. `s_clip = min(max(s_(t,h,c), 0), q95_train)`
-  2. `u_(t,h,c) = log1p(s_clip / (m_train + eps))`
-  3. `w_(t,h,c) = u_(t,h,c) / (eps + mean_{h,c}(u_(t,h,c)))`
+### Integration with Existing Pipeline
 
-  This is the only stabilization operator used in the paper.
+CAVS plugs into the existing stack without modification:
+1. Run each candidate model through `eval/run_controller.py` to get KPIs
+2. Compute CAVS from forecast errors + sensitivity map
+3. Select the model with lowest CAVS (or best CAVS-derived KPI prediction)
+4. Compare against MSE/MAE selection
 
-- Step 3: Fixed mixed objective
-  Train the stabilized model with Huber loss where:
-  - Huber delta = `1.0`
-  - `alpha = 0.85`
+### Relation to CSFT
 
-  Objective:
-
-  `L_t = 0.85 * sum Huber(yhat, y) + 0.15 * sum w_(t,h,c) * Huber(yhat_(t,h,c), y_(t,h,c))`
-
-- Why this is the main novelty:
-  The contribution is now a reproducible algorithmic claim: controller-sensitive supervision becomes usable only after a numerical validity gate and a fixed stabilization operator.
-
-### Optional Supporting Component
-- None.
-
-### Modern Primitive Usage
-- None.
-
-### Integration into Base Generator / Downstream Pipeline
-1. Run numerical preflight on existing artifacts.
-2. If FAIL: stop and falsify raw-CSFT in this setting.
-3. If PASS: compute stabilized weights with the fixed operator.
-4. Train one stabilized-CSFT rerun on GPU 2.
-5. Evaluate with unchanged `forecast -> qp_carbon -> CityLearn` pipeline.
-
-### Training Plan
-1. Run one preflight script.
-2. If PASS, launch one stabilized-CSFT rerun.
-3. Evaluate against uniform and raw-CSFT.
-4. Stop/go decision immediately after this single rerun.
-
-### Failure Modes and Diagnostics
-- Failure mode: oracle alignment fails.
-  - Detection: preflight alignment test.
-  - Mitigation: stop and fix oracle path before any further interpretation.
-- Failure mode: raw labels fail the utility test.
-  - Detection: preflight top-decile MAE threshold.
-  - Mitigation: falsify raw slot-wise CSFT for this setting.
-- Failure mode: stabilized rerun improves top-decile MAE but hurts aggregate MAE too much.
-  - Detection: acceptance rule below.
-  - Mitigation: reject method as too costly in aggregate forecast quality.
-- Failure mode: stabilized rerun improves forecast-side critical cells but not primary KPIs.
-  - Detection: acceptance rule below.
-  - Mitigation: reject method as not decision-useful enough.
-
-### Novelty and Elegance Argument
-The paper asks one narrow question:
-
-> When can controller-derived sensitivity be trusted as supervision for forecasting?
-
-The proposed answer is fully algorithmic:
-
-> Only when it clears a numerical preflight gate, and only after a fixed stabilization operator.
-
-That is sharper than a general “debug and tune CSFT” story.
+The sensitivity map `G(h,c)` that CAVS uses for evaluation can also serve as a training signal. This salvages the CSFT line: sensitivity is more reliable for evaluation/model-selection than for direct weighted training, but the weights themselves are reusable.
 
 ## Claim-Driven Validation Sketch
-### Claim 1: Raw controller-sensitive labels are only usable if they pass a numerical validity gate
-- Minimal experiment:
-  Run the preflight.
-- Baselines / ablations:
-  oracle slices vs env truth; uniform vs raw-CSFT top-decile MAE.
-- Metric:
-  `max_abs_error`, top-decile MAE ratio.
-- Expected evidence:
-  FAIL means the method route should not be scaled.
 
-### Claim 2: The fixed stabilization operator should improve controller-critical fitting without unacceptable aggregate degradation
-- Minimal experiment:
-  One stabilized-CSFT rerun.
-- Baselines / ablations:
-  uniform, raw-CSFT, stabilized-CSFT.
-- Metric:
-  top-decile MAE and overall MAE.
-- Expected evidence:
-  stabilized-CSFT beats raw-CSFT on top-decile MAE and stays close to uniform on overall MAE.
+### Claim 1: Forecast-control misalignment is systematic
 
-### Claim 3: The method is viable only if it passes a pre-registered acceptance rule
-- Minimal experiment:
-  Evaluate stabilized-CSFT vs uniform.
-- Acceptance rule:
-  1. top-decile MAE lower than uniform,
-  2. overall MAE no worse than uniform by more than 1%,
-  3. at least one of `cost` or `carbon` improves,
-  4. `peak` no worse than uniform by more than 1%.
+- Evidence needed: rank reversals between forecast metrics and control KPIs across 5 CityLearn 2023 scenarios, multiple model families (GRU, TSMixer, Moirai2, TimesFM2.5), 3 seeds
+- Quantification: Spearman/Kendall rank correlation between MSE ranking and KPI ranking
+- Threshold: correlation < 0.7 in majority of scenarios
 
-  All four must hold.
+### Claim 2: CAVS selects better models than MSE/MAE
+
+- Evidence needed: CAVS-selected model produces better control KPIs than MSE-selected model
+- Quantification: KPI improvement (cost, carbon, peak) of CAVS-selected vs MSE-selected model
+- Threshold: improvement on at least 2 of 3 primary KPIs in majority of scenarios
 
 ## Experiment Handoff Inputs
-- Must-prove claims:
-  the preflight gate is meaningful, and the fixed stabilization operator can convert valid raw sensitivities into useful supervision.
-- Must-run ablations:
-  uniform vs raw-CSFT top-decile analysis; oracle alignment test; one stabilized rerun.
-- Critical datasets / metrics:
-  current split, existing checkpoints, label files, top-decile MAE, overall MAE, `cost`, `carbon`, `peak`.
-- Highest-risk assumptions:
-  preflight may immediately fail; if so, this route should be stopped rather than expanded.
+
+- Must-prove claims: H1 (misalignment is systematic), H2 (CAVS > MSE selection)
+- Must-run ablations: perturbation sensitivity analysis, multi-scenario replication, seed variance
+- Critical datasets: CityLearn 2023 phase_1 through phase_3 (5 scenarios)
+- External validation: CityLearn 2022 family (3 scenarios)
+- Highest-risk assumptions: misalignment may shrink after oracle cleanup; CAVS advantage may be small if all models have similar error patterns
 
 ## Compute & Timeline Estimate
-- Estimated GPU-hours:
-  Very low for preflight, low for one rerun.
-- Data / annotation cost:
-  None.
-- Timeline:
-  one preflight, one rerun, one stop/go decision.
+
+| Component | GPU-hours |
+|-----------|-----------|
+| E01: Lock stack / baselines | 6 |
+| E02: Train specialists (GRU, TSMixer; 5 scenarios; 3 seeds) | 40 |
+| E03: FM sweep (Moirai2, TimesFM2.5; 5 scenarios) | 10 |
+| E04-E05: Leaderboard + rank correlation | 1 |
+| E06: Oracle semantics | 4 |
+| E07: Perturbation sensitivity | 8 |
+| E08: Event-critical error analysis | 1 |
+| E09: CAVS validation | 4 |
+| E10: External transfer (2022) | 20 |
+| **Total** | **~94** |
+| **Minimum viable (without E10)** | **~63** |

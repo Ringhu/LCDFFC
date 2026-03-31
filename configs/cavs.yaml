@@ -1,0 +1,72 @@
+# CAVS validation sweep configuration
+
+# Scenarios to evaluate
+scenarios:
+  - citylearn_challenge_2023_phase_1
+  - citylearn_challenge_2023_phase_2_local_evaluation
+  - citylearn_challenge_2023_phase_3_1
+  - citylearn_challenge_2023_phase_3_2
+  - citylearn_challenge_2023_phase_3_3
+
+# External validation (optional)
+external_scenarios:
+  - citylearn_challenge_2022_phase_1
+  - citylearn_challenge_2022_phase_2
+  - citylearn_challenge_2022_phase_3
+
+# Models to sweep
+models:
+  - name: rbc
+    forecast_mode: myopic
+    tag: rbc_baseline
+    forecast_config: configs/forecast.yaml
+    controller_config: configs/controller.yaml
+
+  - name: oracle
+    forecast_mode: oracle
+    tag: oracle
+    oracle_data: artifacts/forecast_data.npz
+    forecast_config: configs/forecast.yaml
+    controller_config: configs/controller.yaml
+
+  - name: gru_mse
+    forecast_mode: learned
+    tag: gru_mse
+    checkpoint: artifacts/checkpoints/gru_mse_best.pt
+    norm_stats: artifacts/norm_stats.npz
+    forecast_config: configs/forecast.yaml
+    controller_config: configs/controller.yaml
+
+  # Add more models as checkpoints become available:
+  # - name: tsmixer_mse
+  #   forecast_mode: learned
+  #   tag: tsmixer_mse
+  #   checkpoint: artifacts/checkpoints/tsmixer_mse_best.pt
+  #   norm_stats: artifacts/norm_stats.npz
+  #   forecast_config: configs/forecast_tsmixer.yaml
+  #   controller_config: configs/controller.yaml
+
+# Reference model for CAVS computation (relative improvement baseline)
+reference_model: rbc
+
+# CAVS weights (match controller default_weights)
+cavs_weights:
+  cost: 0.4
+  carbon: 0.2
+  peak: 0.3
+  ramping: 0.1
+
+# Perturbation sensitivity parameters
+perturbation:
+  delta: 0.1
+  horizon: 24
+  num_channels: 3  # price, load, solar
+
+# Seeds for trained models
+seeds: [42, 123, 456]
+
+# Device
+device: "cuda:2"
+
+# Output
+output_dir: reports/cavs

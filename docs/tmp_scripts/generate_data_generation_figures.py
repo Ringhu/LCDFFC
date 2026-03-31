@@ -198,36 +198,39 @@ def make_flow_figure(output_path: str) -> None:
     )
     _draw_box(
         ax,
-        (0.06, 0.03),
-        (0.40, 0.11),
+        (0.06, 0.02),
+        (0.39, 0.14),
         "5A. Sliding Windows + Splits",
         [
-            "Chronological 70/15/15 split.",
-            "24-step history -> 24-step future target.",
-            "Save norm_stats.npz from the train split.",
+            "Chronological 70/15/15 split",
+            "24-step history -> 24-step future target",
+            "Save norm_stats.npz from train split",
         ],
         "#cffafe",
-        body_size=9.0,
+        title_size=10.5,
+        body_size=8.4,
     )
     _draw_box(
         ax,
-        (0.54, 0.03),
-        (0.34, 0.11),
+        (0.53, 0.02),
+        (0.39, 0.14),
         "5B. Model Training / Evaluation",
         [
-            "scripts/train_forecaster.py trains the forecasting backbone.",
-            "eval/run_controller.py reuses the same 9-column feature order.",
+            "Train forecasting backbones with",
+            "scripts/train_forecaster.py",
+            "run_controller.py reuses the same 9-column feature order",
         ],
         "#ddd6fe",
-        body_size=9.0,
+        title_size=10.5,
+        body_size=8.4,
     )
 
     arrows = [
         ((0.50, 0.77), (0.50, 0.70)),
         ((0.50, 0.58), (0.50, 0.51)),
         ((0.50, 0.39), (0.50, 0.32)),
-        ((0.32, 0.20), (0.26, 0.14)),
-        ((0.68, 0.20), (0.72, 0.14)),
+        ((0.30, 0.20), (0.25, 0.16)),
+        ((0.70, 0.20), (0.75, 0.16)),
     ]
 
     for start, end in arrows:

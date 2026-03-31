@@ -6,85 +6,79 @@
 
 ## 当前阶段
 
-当前仓库已经不是 GRU-only prototype。现在更需要把主路径和实验路径整理好，再把一个参考低层协议固定下来。
+当前研究线是 CAVS（Controller-Aware Validation Score）。核心论点：平均预测误差（MSE/MAE）不是下游控制质量的好代理指标，CAVS 能选出比 MSE/MAE 更好的预测模型。
 
-当前重点不是继续加更多模型名，也不是继续扩 router 版本。当前重点是把后续所有实验挂到同一套参考底座上。
+旧的 CSFT/routing 工作已归档到 `refine-logs/archive/` 和 `docs/archive/`。
 
 ## 当前优先级
 
-### P0
+### P0: Lock stack (E01)
 
-1. 保持主阅读路径稳定：`README.md -> CLAUDE.md -> INSTRUCTION.md -> code/tests/configs`
-2. 固定一个低层 reference stack 和统一 artifact
-3. 验证 preference 到 KPI 的可控映射
+验证修正后的 pipeline 能复现基线结果。
 
-### P1
+```bash
+python eval/run_cavs_validation.py --config configs/cavs.yaml --dry_run
+```
 
-4. 检查 routing 结论是否在多个 backbone 上方向一致
-5. 把 router 的 bad JSON / fallback / 调用频率影响写成可验证结果
+- 模型：myopic, oracle, GRU, Moirai2, TimesFM2.5
+- 场景：phase_1
+- 目标：KPI 在修正后的 stack 上可复现
+- 输出：`reports/cavs/E01/`
 
-### P2
+### P1: Misalignment evidence (E02-E05)
 
-6. 再决定是否要做小规模 `SPO+` feasibility check
+训练多 backbone、跑 FM sweep、建排行榜、算 rank correlation。
 
-## 当前推荐动作
+- E02: GRU, TSMixer; 5 scenarios; 3 seeds → checkpoints + forecast/KPI tables
+- E03: Moirai2, TimesFM2.5; 5 scenarios (zero-shot)
+- E04: 合并 E02+E03 建 leaderboard
+- E05: Spearman/Kendall rank correlation（MSE ranking vs KPI ranking）
+- 决策门：如果 rank correlation > 0.85，核心论点弱
 
-### 1. 固定一个 reference low-level protocol
+### P2: Perturbation sensitivity (E06-E08)
 
-先固定这些东西，不要继续横向扩展：
+- E06: Oracle variants 对比（3 scenarios）
+- E07: Channel-horizon perturbation → sensitivity heatmap (24×3)
+- E08: Event-critical error analysis
 
-- 1 个主 controller，优先当前最强 QP 变体
-- 1 个经典 learned backbone
-- 1 个当前最强 foundation backbone
-- 统一 schema、统一指标、统一输出目录结构
+```bash
+python eval/perturbation_sensitivity.py \
+  --schema citylearn_challenge_2023_phase_1 \
+  --oracle_data artifacts/forecast_data.npz \
+  --output_dir reports/cavs/sensitivity
+```
 
-目标很简单：以后 router、preference、diagnosis 都挂在这套底座上。
+### P3: CAVS validation (E09)
 
-### 2. 做 preference-to-KPI controllability
+核心实验。用 E04 的所有模型 + E07 的 sensitivity map，比较 CAVS vs MSE vs MAE 选模型的效果。
 
-先回答这几个问题：
+- 决策门：CAVS 选出的模型在 3+ scenarios 上至少 2 个 KPI 优于 MSE 选出的模型
 
-- `carbon` 权重增大后，carbon KPI 是否稳定下降
-- `peak` 权重增大后，peak KPI 是否稳定改善
-- `balanced / cost-saving / carbon-aware` 是否形成清楚的 trade-off
+### P4: External transfer (E10, NICE-TO-HAVE)
 
-如果这一层不稳定，高层 routing 结论就不稳。
-
-### 3. 做 cross-backbone routing stability
-
-固定 event-driven 协议和同一个 router，在 2 到 3 个 frozen low-level stack 上重复跑。先看结论方向是否一致，再决定论文里能写多强。
+在 CityLearn 2022 上验证 misalignment 和 CAVS 优势是否保持。
 
 ## 当前不该优先做的事
 
-- 继续堆更多 router 命名版本
-- 继续堆更多弱 baseline controller
-- 在没有统一协议前继续写 backbone 排名
-- 把 prompt-only router 写成 production 模块
-- 把 `SPO+`、RL、OOD 提前写成主交付
+- 继续堆 router 版本
+- 把 CSFT 重新拿出来做主贡献
+- 在没有 E01-E05 结果前写论文
+- 把 LLM routing 写成主要贡献
 
-## 建议验证顺序
+## 验证顺序
 
-先跑轻量检查，再跑主 runner：
+先跑轻量检查：
 
 ```bash
 python tests/test_smoke.py
 python tests/test_forecaster_factory.py
 python tests/test_run_controller_modes.py
-python tests/test_controller_baselines.py
-python tests/test_preference_shift.py
 ```
 
-如果环境里有 `cvxpy`，再补：
+主 CAVS runner：
 
 ```bash
-python tests/test_qp.py
-```
-
-主 runner：
-
-```bash
-python eval/run_rbc.py --schema citylearn_challenge_2023_phase_1 --output_dir reports/
-python eval/run_controller.py --schema citylearn_challenge_2023_phase_1 --forecast_config configs/forecast.yaml --controller_config configs/controller.yaml --output_dir reports/ --tag forecast_qp
+python eval/run_cavs_validation.py --config configs/cavs.yaml
 ```
 
 ## 文档更新规则

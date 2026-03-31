@@ -1,10 +1,22 @@
 # refine-logs/
 
-这个目录只放历史实验日志、review 记录和 dated 材料，不承担当前仓库事实源角色。
+当前研究线是 CAVS（Controller-Aware Validation Score）。skill pipeline 文件在这个目录的根层级。
+
+`archive/` 包含旧的 CSFT/routing 追踪文件（EXPERIMENT_PLAN, EXPERIMENT_TRACKER, FINAL_PROPOSAL 等的旧版本）。
+
+## Skill pipeline 文件
+
+| 文件 | 用途 | 读取方 |
+|------|------|--------|
+| `FINAL_PROPOSAL.md` | CAVS 研究提案 | `/experiment-plan` |
+| `REVIEW_SUMMARY.md` | GPT-5.4 review 总结 | `/experiment-plan` |
+| `REFINEMENT_REPORT.md` | 细化报告 | — |
+| `REFINE_STATE.json` | 状态检查点 | `/research-refine` |
+| `score-history.md` | 分数演变 | — |
+| `EXPERIMENT_PLAN.md` | CAVS 实验计划 | `/experiment-bridge` |
+| `EXPERIMENT_TRACKER.md` | 实验追踪表 | `/experiment-bridge` |
 
 ## 什么时候看这里
-
-只有在下面这些情况才需要看：
 
 - 你想追某一轮实验结果
 - 你想看某一轮 review 为什么改了方向
@@ -12,16 +24,4 @@
 
 ## 不要用这里判断什么
 
-不要用这个目录判断：
-
-- 当前主训练入口
-- 当前主评估协议
-- 当前哪些能力算 core supported path
-- 当前文档优先级
-
-这些问题请看：
-
-1. `README.md`
-2. `CLAUDE.md`
-3. `INSTRUCTION.md`
-4. `code/`、`tests/`、`configs/`
+不要用这个目录判断当前主训练入口、评估协议、能力边界。这些问题看 `README.md` → `CLAUDE.md` → `INSTRUCTION.md`。

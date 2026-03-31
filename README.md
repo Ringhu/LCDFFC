@@ -2,11 +2,11 @@
 
 ## 项目简介
 
-这个仓库在 `CityLearn Challenge 2023` 上做 forecast-then-control。当前最稳的主路径是：预测 backbone 或诊断 forecast mode -> QP controller -> CityLearn env。
+这个仓库在 `CityLearn Challenge 2023` 上做 forecast-then-control。核心研究问题：平均预测误差（MSE/MAE）不是下游控制质量的好代理指标。CAVS（Controller-Aware Validation Score）能选出比 MSE/MAE 更好的预测模型。
 
-当前阶段更适合写成：
+当前阶段：
 
-> post-prototype, pre-consolidation research platform
+> CAVS-focused research platform — investigating forecast-control misalignment and controller-aware model selection
 
 ## 先看哪里
 
@@ -33,6 +33,10 @@
 - `controllers/safe_fallback.py`：当前零动作回退
 - `eval/run_controller.py`：forecast + control 主评估入口
 - `eval/run_controller.py --forecast_mode {learned,oracle,myopic}`：诊断模式
+- `eval/cavs_scoring.py`：CAVS 指标计算和模型选择对比
+- `eval/run_cavs_validation.py`：多模型 CAVS 验证 sweep
+- `eval/perturbation_sensitivity.py`：channel-horizon 扰动敏感性分析
+- `configs/cavs.yaml`：CAVS sweep 配置
 
 ### Supported experimental path
 
@@ -113,6 +117,8 @@ python eval/run_controller.py \
 
 更多实验入口见：
 
+- `eval/run_cavs_validation.py`：CAVS 多模型验证 sweep
+- `eval/perturbation_sensitivity.py`：扰动敏感性分析
 - `eval/run_preference_shift.py`
 - `eval/run_foundation_control.py`
 - `eval/run_foundation_controller_compare.py`
@@ -125,6 +131,7 @@ python eval/run_controller.py \
 - `configs/forecast.yaml`
 - `configs/controller.yaml`
 - `configs/eval.yaml`
+- `configs/cavs.yaml`
 - `configs/llm_router.yaml`
 
 测试：

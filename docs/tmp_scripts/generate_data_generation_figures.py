@@ -98,7 +98,7 @@ def make_sample_figure(
     plt.close(fig)
 
 
-def _draw_box(ax, xy, wh, title, body, facecolor):
+def _draw_box(ax, xy, wh, title, body_lines, facecolor, title_size=11, body_size=9.5):
     x, y = xy
     w, h = wh
     patch = FancyBboxPatch(
@@ -111,8 +111,26 @@ def _draw_box(ax, xy, wh, title, body, facecolor):
         facecolor=facecolor,
     )
     ax.add_patch(patch)
-    ax.text(x + 0.02, y + h - 0.035, title, fontsize=11, weight="bold", va="top", ha="left", color="#0f172a")
-    ax.text(x + 0.02, y + h - 0.08, body, fontsize=9.2, va="top", ha="left", color="#1f2937", wrap=True)
+    ax.text(
+        x + 0.022,
+        y + h - 0.028,
+        title,
+        fontsize=title_size,
+        weight="bold",
+        va="top",
+        ha="left",
+        color="#0f172a",
+    )
+    ax.text(
+        x + 0.022,
+        y + h - 0.075,
+        "\n".join(body_lines),
+        fontsize=body_size,
+        va="top",
+        ha="left",
+        color="#1f2937",
+        linespacing=1.35,
+    )
 
 
 def _draw_arrow(ax, start, end):
@@ -129,35 +147,87 @@ def _draw_arrow(ax, start, end):
 
 
 def make_flow_figure(output_path: str) -> None:
-    fig, ax = plt.subplots(figsize=(14, 8))
+    fig, ax = plt.subplots(figsize=(11.5, 10))
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     ax.axis("off")
 
-    boxes = [
-        ((0.05, 0.73), (0.22, 0.18), "1. Scenario Source", "Challenge scenario name or local schema.json\nUse local schema path for reliable offline runs.", "#dbeafe"),
-        ((0.39, 0.73), (0.24, 0.18), "2. CityLearn Rollout", "CityLearnEnv(..., central_agent=True)\nreset() + zero_action step loop", "#dcfce7"),
-        ((0.73, 0.73), (0.22, 0.18), "3. Raw Observation Dump", "citylearn_data.csv/.npz\nAll shared and per-building observations", "#fde68a"),
-        ((0.05, 0.42), (0.22, 0.18), "4. Forecast Dataset Build", "Keep shared features\nAverage selected per-building features", "#fce7f3"),
-        ((0.39, 0.42), (0.24, 0.18), "5. Processed Artifacts", "forecast_data.csv/.npz\n9 columns: shared + averaged state", "#e9d5ff"),
-        ((0.73, 0.42), (0.22, 0.18), "6. Sliding Windows", "CityLearnDataset.from_file()\n24-step history -> 24-step future", "#fed7aa"),
-        ((0.22, 0.11), (0.24, 0.18), "7. Split + Normalize", "Chronological 70/15/15 split\nSave norm_stats.npz from train split", "#cffafe"),
-        ((0.56, 0.11), (0.24, 0.18), "8. Training / Evaluation", "scripts/train_forecaster.py\nmodel predicts price, load, solar\nrun_controller.py reuses same 9-column order", "#ddd6fe"),
-    ]
-
-    for xy, wh, title, body, color in boxes:
-        _draw_box(ax, xy, wh, title, body, color)
+    _draw_box(
+        ax,
+        (0.12, 0.77),
+        (0.76, 0.12),
+        "1. Scenario Selection",
+        [
+            "Use a challenge scenario or local schema.json path.",
+            "For offline runs, prefer the cached local schema path.",
+        ],
+        "#dbeafe",
+    )
+    _draw_box(
+        ax,
+        (0.12, 0.58),
+        (0.76, 0.12),
+        "2. Zero-Action CityLearn Rollout",
+        [
+            "Create CityLearnEnv(..., central_agent=True).",
+            "Call reset(), then step through the full episode with zero battery actions.",
+        ],
+        "#dcfce7",
+    )
+    _draw_box(
+        ax,
+        (0.12, 0.39),
+        (0.76, 0.12),
+        "3. Raw Observation Archive",
+        [
+            "Save all collected observations as citylearn_data.csv and citylearn_data.npz.",
+            "This keeps shared features and per-building features before aggregation.",
+        ],
+        "#fde68a",
+    )
+    _draw_box(
+        ax,
+        (0.12, 0.20),
+        (0.76, 0.12),
+        "4. Processed Forecast Dataset",
+        [
+            "Keep shared features and average selected per-building series.",
+            "Write forecast_data.csv and forecast_data.npz with the fixed 9-column format.",
+        ],
+        "#fce7f3",
+    )
+    _draw_box(
+        ax,
+        (0.06, 0.03),
+        (0.40, 0.11),
+        "5A. Sliding Windows + Splits",
+        [
+            "Chronological 70/15/15 split.",
+            "24-step history -> 24-step future target.",
+            "Save norm_stats.npz from the train split.",
+        ],
+        "#cffafe",
+        body_size=9.0,
+    )
+    _draw_box(
+        ax,
+        (0.54, 0.03),
+        (0.34, 0.11),
+        "5B. Model Training / Evaluation",
+        [
+            "scripts/train_forecaster.py trains the forecasting backbone.",
+            "eval/run_controller.py reuses the same 9-column feature order.",
+        ],
+        "#ddd6fe",
+        body_size=9.0,
+    )
 
     arrows = [
-        ((0.27, 0.82), (0.39, 0.82)),
-        ((0.63, 0.82), (0.73, 0.82)),
-        ((0.84, 0.73), (0.84, 0.60)),
-        ((0.73, 0.51), (0.63, 0.51)),
-        ((0.39, 0.51), (0.27, 0.51)),
-        ((0.16, 0.42), (0.16, 0.29)),
-        ((0.46, 0.20), (0.56, 0.20)),
-        ((0.84, 0.42), (0.84, 0.29)),
-        ((0.80, 0.20), (0.80, 0.39)),
+        ((0.50, 0.77), (0.50, 0.70)),
+        ((0.50, 0.58), (0.50, 0.51)),
+        ((0.50, 0.39), (0.50, 0.32)),
+        ((0.32, 0.20), (0.26, 0.14)),
+        ((0.68, 0.20), (0.72, 0.14)),
     ]
 
     for start, end in arrows:
@@ -176,7 +246,7 @@ def make_flow_figure(output_path: str) -> None:
     ax.text(
         0.5,
         0.94,
-        "This flow matches the current LCDFFC pipeline: zero-action rollout -> processed forecast dataset -> sliding-window supervision.",
+        "Current LCDFFC data path: zero-action rollout -> raw observations -> processed forecast data -> sliding-window supervision.",
         ha="center",
         va="top",
         fontsize=10,
